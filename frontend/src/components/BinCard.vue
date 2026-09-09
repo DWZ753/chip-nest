@@ -7,6 +7,8 @@ const props = defineProps<{
   comp: ComponentItem
   flashing: boolean
   guide: boolean
+  selectable?: boolean
+  selected?: boolean
 }>()
 
 const emit = defineEmits<{ click: [ComponentItem] }>()
@@ -35,7 +37,8 @@ const title = computed(() =>
 <template>
   <div
     class="bin-card group"
-    :class="{ 'search-hit': flashing, 'guide-now': guide }"
+    :class="{ 'search-hit': flashing, 'guide-now': guide,
+              'card-selected': selected }"
     :title="title"
     role="button"
     tabindex="0"
@@ -69,11 +72,12 @@ const title = computed(() =>
         v-if="comp.package"
         class="chip chip-pkg mono"
       >{{ comp.package }}</span>
-      <!-- 用户自定义格子标签：与值/封装同排显示（像 10Ω 一样可见），最多 2 个 -->
-      <span v-for="tag in (comp.tags ?? []).slice(0, 2)" :key="tag"
-            class="chip chip-tag mono !px-1.5 !text-[9.5px] font-bold" :title="tag">#{{ tag }}</span>
-      <span v-if="(comp.tags ?? []).length > 2" class="chip mono !px-1.5 !text-[9px]"
-            title="更多标签">+{{ comp.tags.length - 2 }}</span>
+    </div>
+
+    <!-- 外部显示标签：从 tags 中挑选，显示在名称下面最显眼的位置 -->
+    <div v-if="(comp.display_tags ?? []).length" class="mt-1 flex flex-wrap items-center gap-1">
+      <span v-for="tag in comp.display_tags.slice(0, 3)" :key="tag"
+            class="chip chip-tag-show mono !px-2 !py-0.5 !text-[10px] font-bold">{{ tag }}</span>
     </div>
 
     <!-- 厂商料号（MPN）：采购/识别关键字段，窄格自动隐藏 -->

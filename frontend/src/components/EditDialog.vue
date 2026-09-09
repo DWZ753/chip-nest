@@ -35,6 +35,7 @@ const form = reactive({
   slot: 0,
 })
 const tags = ref<string[]>([])
+const displayTags = ref<string[]>([])
 const tagSuggestions = computed(() => {
   const used = new Set(tags.value)
   const pool = new Set<string>()
@@ -63,6 +64,7 @@ watch(
       form.manufacturer_part = props.comp.manufacturer_part ?? ''
       form.supplier_part = props.comp.supplier_part ?? ''
       tags.value = [...(props.comp.tags ?? [])]
+      displayTags.value = [...(props.comp.display_tags ?? [])]
       form.threshold = props.comp.threshold
       form.zone = props.comp.zone
       form.layer = props.comp.layer
@@ -76,6 +78,7 @@ watch(
       form.manufacturer_part = ''
       form.supplier_part = ''
       tags.value = []
+      displayTags.value = []
       form.threshold = 5
       form.zone = p.zone
       form.layer = p.layer
@@ -106,6 +109,14 @@ function fail(e: unknown) {
   errorMsg.value = e instanceof Error ? e.message : String(e)
 }
 
+function toggleDisplay(tag: string) {
+  if (displayTags.value.includes(tag)) {
+    displayTags.value = displayTags.value.filter((t) => t !== tag)
+  } else if (displayTags.value.length < 3) {
+    displayTags.value = [...displayTags.value, tag]
+  }
+}
+
 async function save() {
   const name = form.name.trim()
   if (!name) { errorMsg.value = '请填写元件名称'; return }
@@ -120,6 +131,7 @@ async function save() {
         manufacturer_part: form.manufacturer_part.trim() || null,
         supplier_part: form.supplier_part.trim() || null,
         tags: [...tags.value],
+        display_tags: [...displayTags.value],
         quantity: Math.max(0, initQty.value | 0),
         threshold: Math.max(0, form.threshold | 0),
         zone: form.zone, layer: form.layer, slot: form.slot,
@@ -256,9 +268,25 @@ function close() {
                 </div>
 
                 <div>
-                  <label class="field-label">格子标签</label>
+                  <label class="field-label">格子标签（内部，用于搜索）</label>
                   <TagEditor v-model="tags" :suggestions="tagSuggestions"
                              placeholder="输入后回车，可加多个" />
+                </div>
+                <div v-if="tags.length">
+                  <label class="field-label">显示在格子上的（挑 1–3 个，与名称一起）</label>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button v-for="tag in tags" :key="tag" type="button"
+                            class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
+                            :class="displayTags.includes(tag) ? '' : 'opacity-45 hover:opacity-80'"
+                            :style="displayTags.includes(tag)
+                              ? 'background: linear-gradient(120deg, #7c6cf0, #8b8ef7); border-color: transparent; color: #fff'
+                              : ''"
+                            @click="toggleDisplay(tag)">
+                      {{ tag }}
+                    </button>
+                  </div>
+                  <div v-if="displayTags.length === 3" class="mt-1 text-[10.5px]"
+                       style="color: var(--text-faint)">最多 3 个</div>
                 </div>
 
                 <!-- 位置 + 阈值 -->

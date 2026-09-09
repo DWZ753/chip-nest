@@ -22,6 +22,7 @@ export interface ComponentItem {
   manufacturer_part: string | null
   supplier_part: string | null
   tags: string[]
+  display_tags: string[]
 }
 
 export interface TransactionRow {

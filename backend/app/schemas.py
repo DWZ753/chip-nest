@@ -7,12 +7,12 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-def _clean_tags_list(values: list) -> list[str]:
-    """标签清洗：去空白、去重、截断，最多 8 个、每个 ≤20 字符。"""
+def _clean_tags_list(values: list, cap: int = 8) -> list[str]:
+    """标签清洗：去空白、去重、截断，最多 cap 个、每个 ≤20 字符。"""
     seen: list[str] = []
     for raw in values:
         item = (raw or "").strip()[:20]
-        if item and item not in seen and len(seen) < 8:
+        if item and item not in seen and len(seen) < cap:
             seen.append(item)
     return seen
 
@@ -54,11 +54,18 @@ class ComponentCreate(BaseModel):
     supplier_part: Optional[str] = Field(default=None, max_length=40)
     # 用户自定义标签：最多 8 个、每个不超过 20 字符，空白剔除
     tags: list[str] = Field(default=[], max_length=8)
+    # 外部可见标签：≤3 个，通常取 tags 的子集
+    display_tags: list[str] = Field(default=[], max_length=3)
 
     @field_validator("tags")
     @classmethod
     def _clean_tags(cls, values):
-        return _clean_tags_list(values)
+        return _clean_tags_list(values, 8)
+
+    @field_validator("display_tags")
+    @classmethod
+    def _clean_display_tags(cls, values):
+        return _clean_tags_list(values, 3)
 
 
 class ComponentUpdate(BaseModel):
@@ -73,13 +80,21 @@ class ComponentUpdate(BaseModel):
     manufacturer_part: Optional[str] = Field(default=None, max_length=64)
     supplier_part: Optional[str] = Field(default=None, max_length=40)
     tags: Optional[list[str]] = Field(default=None, max_length=8)
+    display_tags: Optional[list[str]] = Field(default=None, max_length=3)
 
     @field_validator("tags")
     @classmethod
     def _clean_tags(cls, values):
         if values is None:
             return None
-        return _clean_tags_list(values)
+        return _clean_tags_list(values, 8)
+
+    @field_validator("display_tags")
+    @classmethod
+    def _clean_display_tags(cls, values):
+        if values is None:
+            return None
+        return _clean_tags_list(values, 3)
 
     led_index: Optional[int] = Field(default=None, ge=0)
     zone: Optional[int] = Field(default=None, ge=1)
@@ -111,8 +126,9 @@ class ComponentOut(BaseModel):
     manufacturer_part: Optional[str] = None
     supplier_part: Optional[str] = None
     tags: list[str] = []
+    display_tags: list[str] = []
 
-    @field_validator("tags", mode="before")
+    @field_validator("tags", "display_tags", mode="before")
     @classmethod
     def _parse_tags(cls, value):
         """ORM 层存的是 JSON 文本，转回列表。"""

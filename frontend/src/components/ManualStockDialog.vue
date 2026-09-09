@@ -37,6 +37,9 @@ const errorMsg = ref<string | null>(null)
 const okCount = ref(0)
 let seq = 0
 
+// 表头与数据行共用同一列宽模板，保证严格对齐
+const GRID_COLS = 'minmax(150px,1.5fr) 92px 78px minmax(120px,1.3fr) 104px 66px minmax(120px,1fr) 176px 34px'
+
 const slotOptions = computed<SelectOption[]>(() =>
   freeOptions.value.map((p) => ({
     value: keyOf(p),
@@ -171,8 +174,8 @@ watch(() => props.open, (v) => { if (v) setupRows() })
 
               <div class="flex flex-col gap-3">
                 <!-- 表头提示列（紧凑网格） -->
-                <div class="grid grid-cols-[minmax(150px,1.4fr)_88px_76px_1.1fr_92px_64px_1fr_150px_28px] gap-2 px-1 text-[10px] font-bold"
-                     style="color: var(--text-faint)">
+                <div class="grid gap-2 px-1.5 pb-1 text-[9.5px] font-bold whitespace-nowrap"
+                     :style="{ gridTemplateColumns: GRID_COLS, color: 'var(--text-faint)' }">
                   <span>名称</span><span>值</span><span>封装</span><span>厂商料号</span>
                   <span>供应商料号</span><span class="text-right">数量</span><span>格子标签</span>
                   <span>放置位置</span><span />
@@ -183,7 +186,7 @@ watch(() => props.open, (v) => { if (v) setupRows() })
                        :style="row.status === 'err' ? 'background: rgba(255,92,122,.08)'
                          : row.status === 'ok' ? 'background: rgba(103,185,140,.06)'
                          : 'background: rgba(255,255,255,.025)'">
-                    <div class="grid grid-cols-[minmax(150px,1.4fr)_88px_76px_1.1fr_92px_64px_1fr_150px_28px] items-center gap-2">
+                    <div class="grid items-center gap-2" :style="{ gridTemplateColumns: GRID_COLS }">
                       <input v-model="row.name" class="input !px-2 !py-1 text-[12.5px]" placeholder="必填" :disabled="row.status === 'ok'" />
                       <input v-model="row.value" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
                       <input v-model="row.package" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />

@@ -36,8 +36,10 @@ class Component(Base):
     # 厂商料号（MPN）与供应商编号（Supplier Part）：BOM 采购/识别依据
     manufacturer_part: Mapped[Optional[str]] = mapped_column(String(64))
     supplier_part: Mapped[Optional[str]] = mapped_column(String(40))
-    # 用户自定义标签（JSON 数组，如 ["主控","stm32"]）；卡片展示 + 可检索
+    # 用户自定义标签（JSON 数组，如 ["主控","stm32"]）；用于检索/筛选
     tags: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    # 外部可见标签：从 tags 中挑选 1~3 个，显示在格子上（与元件名一起）
+    display_tags: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     quantity: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     threshold: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
     zone: Mapped[int] = mapped_column(Integer)

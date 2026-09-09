@@ -129,3 +129,20 @@ async def test_position_out_of_layout_rejected(client):
     })
     assert resp.status_code == 400
     assert await _count_transactions() == 0  # 失败不留痕
+
+async def test_display_tags_roundtrip(client):
+    """外部显示标签：建档携带 → 读取 → 改选/清空。"""
+    comp = await _create(client, slot=0, name="主控芯片", value=None,
+                         package="QFP-100", tags=["主控", "常用"],
+                         display_tags=["主控"])
+    assert comp["display_tags"] == ["主控"]
+    row = (await client.get(f"/api/v1/components/{comp['id']}")).json()
+    assert row["tags"] == ["主控", "常用"] and row["display_tags"] == ["主控"]
+
+    resp = await client.patch(f"/api/v1/components/{comp['id']}",
+                              json={"display_tags": ["常用"]})
+    assert resp.status_code == 200
+    assert resp.json()["display_tags"] == ["常用"]
+
+    resp = await client.patch(f"/api/v1/components/{comp['id']}", json={"display_tags": []})
+    assert resp.status_code == 200 and resp.json()["display_tags"] == []

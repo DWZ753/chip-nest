@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Plus, TriangleAlert } from '@lucide/vue'
+import { computed, ref } from 'vue'
+import { Plus, Trash2, TriangleAlert } from '@lucide/vue'
 
 import type { ComponentItem } from '../api/types'
 import { positionKey, useBinsStore, zoneName, type BinPosition } from '../stores/bins'
@@ -10,6 +10,50 @@ const emit = defineEmits<{
   edit: [ComponentItem]
   create: [BinPosition]
 }>()
+
+// ---------- 批量选择模式 ----------
+const batchMode = ref(false)
+const selectedIds = ref<Set<number>>(new Set())
+const confirmDelete = ref(false)
+let confirmTimer: ReturnType<typeof setTimeout> | undefined
+
+function enterBatch() {
+  batchMode.value = true
+  selectedIds.value = new Set()
+}
+
+function exitBatch() {
+  batchMode.value = false
+  selectedIds.value = new Set()
+  confirmDelete.value = false
+  window.clearTimeout(confirmTimer)
+}
+
+function toggleSelect(comp: ComponentItem) {
+  const next = new Set(selectedIds.value)
+  if (next.has(comp.id)) next.delete(comp.id)
+  else next.add(comp.id)
+  selectedIds.value = next
+}
+
+function onCard(comp: ComponentItem) {
+  if (batchMode.value) toggleSelect(comp)
+  else emit('edit', comp)
+}
+
+async function deleteSelected() {
+  if (!confirmDelete.value) {
+    confirmDelete.value = true
+    window.clearTimeout(confirmTimer)
+    confirmTimer = window.setTimeout(() => { confirmDelete.value = false }, 3500)
+    return
+  }
+  window.clearTimeout(confirmTimer)
+  for (const id of selectedIds.value) {
+    await bins.removeComponent(id)
+  }
+  exitBatch()
+}
 
 const bins = useBinsStore()
 
@@ -34,6 +78,20 @@ async function fixOrphans() {
 
 <template>
   <div class="fade-up mx-auto flex w-[min(1400px,calc(100%-24px))] flex-col gap-4 pb-16">
+    <!-- 批量操作条 -->
+    <div class="flex items-center justify-end gap-2">
+      <template v-if="batchMode">
+        <span class="chip num">已选 {{ selectedIds.size }} 个</span>
+        <button class="btn btn-danger !py-1.5 text-xs" @click="deleteSelected">
+          <Trash2 :size="13" /> {{ confirmDelete ? '确认删除？' : '删除所选' }}
+        </button>
+        <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
+      </template>
+      <button v-else class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
+        ☑ 多选
+      </button>
+    </div>
+
     <!-- 游离元件提示：布局缩容后超出网格 -->
     <div
       v-if="bins.orphanComps.length > 0"
@@ -101,7 +159,9 @@ async function fixOrphans() {
                 :comp="compAt({ zone, layer, slot: slot - 1 })!"
                 :flashing="!!bins.flashKeys[positionKey({ zone, layer, slot: slot - 1 })]"
                 :guide="bins.guideKey === positionKey({ zone, layer, slot: slot - 1 })"
-                @click="emit('edit', $event)"
+                :selectable="batchMode"
+                :selected="batchMode && selectedIds.has(compAt({ zone, layer, slot: slot - 1 })!.id)"
+                @click="onCard($event)"
               />
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
