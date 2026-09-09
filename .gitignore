@@ -29,4 +29,7 @@ electron/release/
 .env
 .idea/
 .vscode/
-.DS_Store
+.DS_Storefrontend/vite.config.js
+frontend/vite.config.d.ts
+*.tsbuildinfo
+install.log
