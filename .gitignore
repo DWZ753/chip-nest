@@ -34,3 +34,4 @@ frontend/vite.config.d.ts
 *.tsbuildinfo
 install.log
 backend/*.log
+.dsh-vision-toolkit/
