@@ -97,5 +97,7 @@ const title = computed(() =>
 
     <div class="flex-1" />
     <div class="band -mx-3 mt-2" :class="bandCls" :style="{ width: bandWidth }" />
+    <!-- 搜索命中的辉光层（线性淡出） -->
+    <div v-if="flashing" class="flash-layer" />
   </div>
 </template>

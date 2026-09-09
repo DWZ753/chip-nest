@@ -68,7 +68,7 @@ export const useBinsStore = defineStore('bins', () => {
 
   // 上一次触发过呼吸动画的查询串：避免同查询反复重启动画造成卡顿
   let lastFlashQuery = ''
-  const FLASH_MS = 1800
+  const FLASH_MS = 2000
 
   function addFlash(keys: string[], forQuery: string) {
     if (!forQuery || forQuery === lastFlashQuery) return
