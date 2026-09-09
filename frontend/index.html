@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChipNest · 智能元件管家</title>
+    <script>
+      // 首屏防闪烁：默认深色科技风，用户手动选过 light 才切浅色
+      (function () {
+        try {
+          var saved = localStorage.getItem('chipnest-theme')
+          if (saved === 'light') document.documentElement.classList.add('light')
+        } catch (e) { /* 忽略 */ }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

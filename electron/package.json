@@ -1,0 +1,67 @@
+{
+  "name": "chipnest-electron",
+  "productName": "ChipNest",
+  "version": "0.3.4",
+  "description": "智能元件管家 · 桌面壳",
+  "main": "main.js",
+  "author": "ChipNest",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env CHIPNEST_DEV=1 electron .",
+    "smoke": "cross-env CHIPNEST_SMOKE=1 electron .",
+    "check": "node --check main.js",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.chipnest.app",
+    "productName": "ChipNest",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend_dist"
+      },
+      {
+        "from": "../backend/dist/chipnest-backend.exe",
+        "to": "backend/chipnest-backend.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "ChipNest-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "ChipNest",
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
