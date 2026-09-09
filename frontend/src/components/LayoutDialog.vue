@@ -3,14 +3,14 @@ import { reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { History, LayoutGrid, Save, X } from '@lucide/vue'
+import { History, LayoutGrid, PackagePlus, Save, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { TransactionRow } from '../api/types'
 import { useBinsStore } from '../stores/bins'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; manual: [] }>()
 const bins = useBinsStore()
 
 const form = reactive({
@@ -85,7 +85,10 @@ const kindLabel: Record<string, { text: string; color: string }> = {
               <div class="mb-4 flex items-center gap-2.5">
                 <LayoutGrid :size="17" style="color: var(--accent)" />
                 <DialogTitle class="text-base font-extrabold">仓库布局</DialogTitle>
-                <button class="icon-btn ml-auto !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
+                <button class="btn ml-auto !px-3 !py-1.5 text-xs" @click="emit('manual')">
+                  <PackagePlus :size="14" /> 手工入库
+                </button>
+                <button class="icon-btn !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
               </div>
 
               <div class="flex flex-col gap-4 overflow-y-auto pr-1">

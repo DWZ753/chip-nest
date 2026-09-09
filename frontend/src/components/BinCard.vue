@@ -69,13 +69,10 @@ const title = computed(() =>
         v-if="comp.package"
         class="chip chip-pkg mono"
       >{{ comp.package }}</span>
-    </div>
-
-    <!-- 用户自定义标签：最多显示 2 个，其余折叠为 +N -->
-    <div v-if="comp.tags?.length" class="meta-tags mt-0.5 flex items-center gap-1 overflow-hidden">
-      <span v-for="tag in comp.tags.slice(0, 2)" :key="tag"
-            class="chip chip-tag mono !px-1.5 !text-[9px]" :title="tag">#{{ tag }}</span>
-      <span v-if="comp.tags.length > 2" class="chip mono !px-1.5 !text-[9px]"
+      <!-- 用户自定义格子标签：与值/封装同排显示（像 10Ω 一样可见），最多 2 个 -->
+      <span v-for="tag in (comp.tags ?? []).slice(0, 2)" :key="tag"
+            class="chip chip-tag mono !px-1.5 !text-[9.5px] font-bold" :title="tag">#{{ tag }}</span>
+      <span v-if="(comp.tags ?? []).length > 2" class="chip mono !px-1.5 !text-[9px]"
             title="更多标签">+{{ comp.tags.length - 2 }}</span>
     </div>
 

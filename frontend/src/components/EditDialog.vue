@@ -8,6 +8,7 @@ import { Minus, Pencil, Plus, Trash2, X } from '@lucide/vue'
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
+import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 
 const props = defineProps<{
   open: boolean
@@ -78,6 +79,17 @@ watch(
   },
   { immediate: true },
 )
+
+const zoneOptions = computed<SelectOption[]>(() =>
+  Array.from({ length: props.layout.zone_count }, (_, i) => ({
+    value: i + 1, label: `第 ${i + 1} 区`,
+  })))
+const layerOptions = computed<SelectOption[]>(() =>
+  Array.from({ length: props.layout.layer_count }, (_, i) => ({
+    value: i + 1, label: `第 ${i + 1} 层`,
+  })))
+const slotOptions = computed<SelectOption[]>(() =>
+  slots.value.map((s) => ({ value: s, label: String(s) })))
 
 function parseTags(): string[] {
   const seen: string[] = []
@@ -246,9 +258,9 @@ function close() {
                 </div>
 
                 <div>
-                  <label class="field-label">标签</label>
+                  <label class="field-label">格子标签</label>
                   <input v-model="form.tagsText" class="input mono" maxlength="200"
-                         placeholder="例：主控、stm32" />
+                         placeholder="例：主控、stm32（会显示在格子上）" />
                 </div>
 
                 <!-- 位置 + 阈值 -->
@@ -256,21 +268,15 @@ function close() {
                   <div class="grid grid-cols-3 gap-2">
                     <div>
                       <label class="field-label">区</label>
-                      <select v-model.number="form.zone" class="select">
-                        <option v-for="z in layout.zone_count" :key="z" :value="z">{{ z }}</option>
-                      </select>
+                      <NiceSelect v-model="form.zone" :options="zoneOptions" />
                     </div>
                     <div>
                       <label class="field-label">层</label>
-                      <select v-model.number="form.layer" class="select">
-                        <option v-for="l in layout.layer_count" :key="l" :value="l">{{ l }}</option>
-                      </select>
+                      <NiceSelect v-model="form.layer" :options="layerOptions" />
                     </div>
                     <div>
                       <label class="field-label">格</label>
-                      <select v-model.number="form.slot" class="select">
-                        <option v-for="s in slots" :key="s" :value="s">{{ s }}</option>
-                      </select>
+                      <NiceSelect v-model="form.slot" :options="slotOptions" />
                     </div>
                   </div>
                   <div>

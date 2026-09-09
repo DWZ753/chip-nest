@@ -11,6 +11,7 @@ import {
 import { api } from '../api/client'
 import type { BomParseOut, BomPlan, BomStep } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
+import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; start: [BomStep[]] }>()
@@ -146,6 +147,10 @@ function openImportList() {
     ? '空格不足：还有 ' + unplaced + ' 行没有默认位置，请手动选择或先在「设置」里扩容布局'
     : null
 }
+
+const slotOptions = computed<SelectOption[]>(() =>
+  Array.from(slotLabels.value.entries()).map(([key, label]) => ({ value: key, label })),
+)
 
 const slotLabels = computed(() => {
   const map = new Map<string, string>()
@@ -358,10 +363,8 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                     <input v-model="row.value" class="input mono !px-2 !py-1 text-[12px]" placeholder="值" :disabled="row.status === 'ok'" />
                     <input v-model="row.package" class="input mono !px-2 !py-1 text-[12px]" placeholder="封装" :disabled="row.status === 'ok'" />
                     <input v-model.number="row.quantity" type="number" min="1" class="input num !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
-                    <select v-model="row.posKey" class="select !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'">
-                      <option value="">选择空格位…</option>
-                      <option v-for="(label, key) in slotLabels" :key="key" :value="key">{{ label }}</option>
-                    </select>
+                    <NiceSelect v-model="row.posKey" :options="slotOptions"
+                                :disabled="row.status === 'ok'" placeholder="空格位…" />
                     <span v-if="row.status === 'ok'" class="mono text-[11px] font-bold text-center" style="color: var(--success)">✓</span>
                     <span v-else-if="row.status === 'err'" class="mono text-[11px] font-bold text-center" :title="row.err" style="color: var(--danger)">✗</span>
                     <span v-else class="mono text-[10px] text-center" style="color: var(--text-faint)">…</span>

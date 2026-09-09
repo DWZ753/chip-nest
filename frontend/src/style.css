@@ -309,18 +309,19 @@ html.light .bin-card {
   color: var(--accent-ink);
   line-height: 1.4;
 }
-/* 用户标签小胶囊 */
+/* 用户格子标签小胶囊：与值/封装同排，紫罗兰描边高对比 */
 .chip-tag {
-  background: color-mix(in srgb, var(--violet) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--violet) 35%, var(--line-strong));
-  color: color-mix(in srgb, var(--violet) 75%, var(--text-dim));
+  background: color-mix(in srgb, var(--violet) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--violet) 55%, var(--line-strong));
+  color: var(--accent-ink);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--violet) 25%, transparent);
   line-height: 1.5;
 }
 /* 很窄的格子：隐藏次要行（MPN/LED 号），只留名称+值，避免重叠 */
 @container (max-width: 148px) {
   .bin-card .mpn-line { display: none; }
   .bin-card .chip-led { display: none; }
-  .bin-card .meta-tags { display: none; }
+  .bin-card .chip-tag { display: none; }
   .bin-card .meta-row { gap: 2px; }
 }
 @container (max-width: 118px) {

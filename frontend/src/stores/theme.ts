@@ -1,6 +1,7 @@
 // 深浅主题 + 界面字号缩放：都持久化到 localStorage。
-// 深色为默认科技风；html.light = 日光终端；字号用 CSS zoom 整体缩放。
-import { ref } from 'vue'
+// light=true ⇔ html.light（日光浅色）；默认深色科技风。
+// dark 是导出给组件用的反向计算量，语义就是“当前为深色”。
+import { computed, ref } from 'vue'
 
 const KEY = 'chipnest-theme'
 const FONT_KEY = 'chipnest-font-scale'
@@ -10,6 +11,7 @@ function apply(light: boolean) {
 }
 
 const light = ref(document.documentElement.classList.contains('light'))
+const dark = computed(() => !light.value)
 
 const FONT_STEPS = [0.9, 1, 1.15, 1.3]
 function readScale(): number {
@@ -24,15 +26,18 @@ function applyFont(v: number) {
 applyFont(fontScale.value)
 
 export function useTheme() {
+  function setLight(wantLight: boolean) {
+    light.value = wantLight
+    apply(wantLight)
+    localStorage.setItem(KEY, wantLight ? 'light' : 'dark')
+  }
   function toggle() {
-    light.value = !light.value
-    apply(light.value)
-    localStorage.setItem(KEY, light.value ? 'light' : 'dark')
+    setLight(!light.value)
   }
   function setFontScale(v: number) {
     if (!FONT_STEPS.includes(v)) return
     fontScale.value = v
     applyFont(v)
   }
-  return { dark: light, toggle, fontScale, setFontScale, FONT_STEPS }
+  return { light, dark, setLight, toggle, fontScale, setFontScale, FONT_STEPS }
 }

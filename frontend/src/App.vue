@@ -9,6 +9,7 @@ import GridView from './components/GridView.vue'
 import EditDialog from './components/EditDialog.vue'
 import BomDialog from './components/BomDialog.vue'
 import LayoutDialog from './components/LayoutDialog.vue'
+import ManualStockDialog from './components/ManualStockDialog.vue'
 import AppSettingsDialog from './components/AppSettingsDialog.vue'
 import GuideOverlay from './components/GuideOverlay.vue'
 
@@ -20,6 +21,7 @@ const editComp = ref<ComponentItem | null>(null)
 const createPos = ref<BinPosition | null>(null)
 const bomOpen = ref(false)
 const layoutOpen = ref(false)
+const manualOpen = ref(false)
 const settingsOpen = ref(false)
 const guideOpen = ref(false)
 const guideSteps = ref<BomStep[]>([])
@@ -98,7 +100,12 @@ async function retry() {
       @close="editOpen = false"
     />
     <BomDialog :open="bomOpen" @close="bomOpen = false" @start="startGuide" />
-    <LayoutDialog :open="layoutOpen" @close="layoutOpen = false" />
+    <LayoutDialog
+      :open="layoutOpen"
+      @close="layoutOpen = false"
+      @manual="manualOpen = true"
+    />
+    <ManualStockDialog :open="manualOpen" @close="manualOpen = false" />
     <AppSettingsDialog :open="settingsOpen" @close="settingsOpen = false" />
     <GuideOverlay
       :open="guideOpen"

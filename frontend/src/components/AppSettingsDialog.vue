@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import {} from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
@@ -11,16 +11,8 @@ import { useTheme } from '../stores/theme'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const connection = useConnectionStore()
-const { dark, toggle, fontScale, setFontScale, FONT_STEPS } = useTheme()
+const { dark, setLight, fontScale, setFontScale, FONT_STEPS } = useTheme()
 const SCALE_LABELS = ['小', '默认', '大', '特大']
-
-// 供“浅色/深色”两个按钮直接选择（toggle 只在需要翻转时调用）
-const pickTheme = ref(dark.value)
-watch(() => dark.value, (v) => { pickTheme.value = v })
-
-function chooseDark(want: boolean) {
-  if (dark.value !== want) toggle()
-}
 
 const MODE_TEXT = {
   serial: '串口模式',
@@ -57,13 +49,13 @@ const MODE_TEXT = {
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="dark ? 'opacity-55' : ''"
                       :style="!dark ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                      @click="chooseDark(false)"
+                      @click="setLight(false)"
                     ><Sun :size="12" class="mr-1 inline" />浅色</button>
                     <button
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="dark ? '' : 'opacity-55'"
                       :style="dark ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                      @click="chooseDark(true)"
+                      @click="setLight(true)"
                     ><Moon :size="12" class="mr-1 inline" />深色</button>
                   </div>
                 </section>
