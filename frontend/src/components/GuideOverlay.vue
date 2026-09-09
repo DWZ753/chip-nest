@@ -96,11 +96,6 @@ function done() {
         class="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden"
         style="background: radial-gradient(circle at 50% 40%, rgba(20, 18, 15, 0.42), rgba(16, 14, 12, 0.66))"
       >
-        <!-- 右上关闭 -->
-        <button class="icon-btn absolute right-4 top-4 !text-white/70 hover:!text-white" title="中止引导" @click="abort">
-          <X :size="20" />
-        </button>
-
         <!-- 巨幕步数 -->
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div class="step-number num text-[26vh] font-black leading-none opacity-[0.16]" style="color: #fff">
@@ -135,11 +130,18 @@ function done() {
 
               <div class="my-5 text-2xl font-black text-amber-300">请取走 × {{ step.quantity }}</div>
 
-              <button class="btn !rounded-full !px-8 !py-3 text-base font-extrabold text-white" :disabled="picking"
-                      style="background: linear-gradient(120deg, #d98f3e, #e8b45c); box-shadow: 0 14px 30px -10px rgba(220, 140, 50, 0.6)"
-                      @click="pickNext">
-                <PackageOpen :size="18" /> 已取走，下一步
-              </button>
+              <div class="flex items-center justify-center gap-3">
+                <button class="btn !rounded-full !px-6 !py-3 text-base font-extrabold" :disabled="picking"
+                        style="background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.25); color: #fff"
+                        @click="abort">
+                  <X :size="17" /> 中止
+                </button>
+                <button class="btn !rounded-full !px-8 !py-3 text-base font-extrabold text-white" :disabled="picking"
+                        style="background: linear-gradient(120deg, #d98f3e, #e8b45c); box-shadow: 0 14px 30px -10px rgba(220, 140, 50, 0.6)"
+                        @click="pickNext">
+                  <PackageOpen :size="18" /> 已取走，下一步
+                </button>
+              </div>
             </div>
           </template>
 

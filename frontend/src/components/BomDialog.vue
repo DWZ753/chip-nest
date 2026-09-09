@@ -309,7 +309,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                     </ul>
                   </div>
                   <div class="fade-up flex flex-col gap-1.5 rounded-xl px-4 py-3"
-                       style="border: 1px solid var(--line-strong)">
+                       style="border: 1px solid var(--line-strong); background: var(--panel)">
                     <div class="text-[12.5px] font-extrabold" style="color: var(--accent-ink)">规划路线（共 {{ plan.steps.length }} 步）</div>
                     <div v-for="(step, i) in plan.steps" :key="step.component.id"
                          class="flex items-center gap-2 rounded-lg px-2 py-1 text-[12.5px]"

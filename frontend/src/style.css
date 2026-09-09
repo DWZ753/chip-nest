@@ -329,9 +329,8 @@ html.light .chip-tag-show {
 .bin-card.card-selected::after {
   content: '✓';
   position: absolute;
-  top: auto;
+  top: 5px;
   right: 5px;
-  bottom: 5px;
   width: 16px;
   height: 16px;
   border-radius: 999px;
