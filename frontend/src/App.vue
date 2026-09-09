@@ -56,6 +56,11 @@ function startGuide(steps: BomStep[]) {
   guideOpen.value = true
 }
 
+function openManual() {
+  layoutOpen.value = false
+  manualOpen.value = true
+}
+
 async function refreshAfterGuide() {
   try { await bins.refreshAll() } catch { /* 下次操作自愈 */ }
 }
@@ -103,7 +108,7 @@ async function retry() {
     <LayoutDialog
       :open="layoutOpen"
       @close="layoutOpen = false"
-      @manual="manualOpen = true"
+      @manual="openManual"
     />
     <ManualStockDialog :open="manualOpen" @close="manualOpen = false" />
     <AppSettingsDialog :open="settingsOpen" @close="settingsOpen = false" />

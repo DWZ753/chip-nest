@@ -9,6 +9,7 @@ import { api } from '../api/client'
 import type { BinPosition } from '../stores/bins'
 import { useBinsStore } from '../stores/bins'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
+import TagEditor from './ui/TagEditor.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -22,7 +23,7 @@ interface Row {
   package: string
   manufacturerPart: string
   supplierPart: string
-  tagsText: string
+  tags: string[]
   quantity: number
   posKey: string
   status: 'pending' | 'ok' | 'err'
@@ -52,15 +53,6 @@ function parsePos(k: string): BinPosition {
   return { zone, layer, slot }
 }
 
-function parseTags(text: string): string[] {
-  const seen: string[] = []
-  for (const raw of text.split(/[,，、\s]+/)) {
-    const item = raw.trim().slice(0, 20)
-    if (item && !seen.includes(item) && seen.length < 8) seen.push(item)
-  }
-  return seen
-}
-
 function newRow(force = false): Row | null {
   if (!force && rows.value.length >= 1 && rows.value[rows.value.length - 1].status === 'pending'
       && !rows.value[rows.value.length - 1].name.trim()) {
@@ -74,7 +66,7 @@ function newRow(force = false): Row | null {
     package: '',
     manufacturerPart: '',
     supplierPart: '',
-    tagsText: '',
+    tags: [],
     quantity: 1,
     posKey: pos ? keyOf(pos) : '',
     status: 'pending',
@@ -116,7 +108,7 @@ async function importAll() {
         package: row.package.trim() || null,
         manufacturer_part: row.manufacturerPart.trim() || null,
         supplier_part: row.supplierPart.trim() || null,
-        tags: parseTags(row.tagsText),
+        tags: [...row.tags],
         quantity: Math.max(1, row.quantity | 0),
         threshold: 5,
         zone: parsePos(row.posKey).zone,
@@ -199,7 +191,8 @@ watch(() => props.open, (v) => { if (v) setupRows() })
                       <input v-model="row.supplierPart" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
                       <input v-model.number="row.quantity" type="number" min="1"
                              class="input num !px-2 !py-1 text-[12px] text-center" :disabled="row.status === 'ok'" />
-                      <input v-model="row.tagsText" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
+                      <TagEditor v-model="row.tags" placeholder="标签" compact
+ />
                       <NiceSelect v-model="row.posKey" :options="slotOptions"
                                   :disabled="row.status === 'ok'" placeholder="空格位…" />
                       <button class="icon-btn !h-7 !w-7 !rounded-lg" :disabled="row.status === 'ok'"

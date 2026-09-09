@@ -39,8 +39,8 @@ const hasValue = computed(() =>
   <Listbox v-model="current" :disabled="disabled">
     <div class="relative">
       <ListboxButton
-        class="select flex items-center justify-between gap-1 !pr-2 text-left disabled:opacity-50"
-        :style="hasValue ? '' : 'color: var(--text-faint)'"
+        class="input flex items-center justify-between gap-1 !py-2 text-left disabled:opacity-50"
+        :style="hasValue ? 'background-image: none' : 'color: var(--text-faint); background-image: none'"
       >
         <span class="truncate">{{ selectedLabel }}</span>
         <ChevronDown :size="13" class="ml-1 flex-shrink-0 opacity-60" />

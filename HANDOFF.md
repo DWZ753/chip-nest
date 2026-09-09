@@ -114,7 +114,7 @@ chip-nest/
 - PyInstaller onefile → backend/dist/chipnest-backend.exe（约 25MB；--collect-all pypinyin + --collect-submodules uvicorn +
   --hidden-import aiosqlite/greenlet/websockets）。独立运行实测：health、中文建档、拼音检索 dz、0603、bom/plan、system/status 全通。
 - electron-builder：extraResources 收 backend/chipnest-backend.exe 与 frontend_dist（frontend/dist）；--win --dir 的 win-unpacked
-  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.6.exe（约 130MB）。
+  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.7.exe（约 130MB）。
 - 注意：安装包**未代码签名**（SmartScreen 提示属预期）；nsis 为交互式向导（oneClick:false，无人值守 /S 不适用，需人工下一步）。
 
 ### V0.3.0 迭代（专业性与可用性 ✅，同日完成）
@@ -134,6 +134,13 @@ chip-nest/
   q=CL05/104KB 检索全通；vue-tsc + vite build 零错误；DOM 冒烟显示区名与 MPN；
   win-unpacked CHIPNEST_SMOKE=1 页面加载成功。产物 v0.3.0。
 
+### V0.3.7 修三处体验问题 ✅
+- NiceSelect 双箭头：按钮不再复用带 CSS 背景箭头的 .select 类，只留单个图标（原生背景与自绘图标叠加所致）。
+- 标签：窄格（≥15 列）时曾隐藏标签导致看不到 → 仅超窄（≤118px）隐藏；编辑改为 Steam/B站式
+  TagEditor（chip 输入、回车/逗号/顿号加、X 删除、基于现有标签的建议列表、上限 12 个），
+  EditDialog 与手工入库都接入；格子与值/封装同排显示 #标签（最多 2 个 +N）。
+- 手工入库点击会关掉父级仓库布局：嵌套模态外点误触 → 改为打开手工入库时先关闭仓库布局（不再嵌套）。
+- 产物 v0.3.7：冒烟 exit=0、probe=[200,200,200,'0.3.7']、ui-marker=true。
 ### V0.3.6 标签重做 + 手工入库 + 玻璃下拉 + 主题修复 + 中文提交 ✅
 - 主题语义修复：theme store 的 dark/light 曾颠倒导致设置里“深/浅”按钮反了；现在 dark=深色主题。
 - 格子标签：编辑字段改名“格子标签”，与阻值/封装同排高对比显示在卡片上（#标签，最多 2 个 +N），可搜索。
@@ -200,7 +207,7 @@ chip-nest/
   vue-tsc + vite build 零错误；headless DOM 冒烟确认 ZONE 标签/元件卡/MOCK 胶囊渲染；
   新 UI 截图存 `frontend/preview-tech-dark.png`（视觉 API 限流未人工复核，请目测）。
 - 产物重建为 **v0.2.0**：backend/dist/chipnest-backend.exe + electron/release/
-  ChipNest-Setup-0.3.6.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
+  ChipNest-Setup-0.3.7.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
 
 ## 4. 完成状态与收尾清单（M1–M7 + 打包 ✅，2026-09-08）
 
@@ -211,7 +218,7 @@ chip-nest/
 - M5 ✅ 前端骨架 + 设计系统（§3）
 - M6 ✅ 核心视图与动效（§3）
 - M7 ✅ Electron 壳 + ESP32 固件 + 打包配置（§3）
-- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.6.exe（重建命令见 README「打包」）
+- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.7.exe（重建命令见 README「打包」）
 
 ### 收尾清单（剩余为可选增强/需人工）
 - ⏳ 安装包 UI 走查：NSIS 向导/快捷方式/卸载（无人值守只验证到 win-unpacked 冒烟）。

@@ -9,6 +9,7 @@ import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
+import TagEditor from './ui/TagEditor.vue'
 
 const props = defineProps<{
   open: boolean
@@ -28,11 +29,17 @@ const form = reactive({
   package: '',
   manufacturer_part: '',
   supplier_part: '',
-  tagsText: '',
   threshold: 5,
   zone: 1,
   layer: 1,
   slot: 0,
+})
+const tags = ref<string[]>([])
+const tagSuggestions = computed(() => {
+  const used = new Set(tags.value)
+  const pool = new Set<string>()
+  for (const c of bins.components) for (const t of c.tags ?? []) pool.add(t)
+  return Array.from(pool).filter((t) => !used.has(t)).slice(0, 8)
 })
 const initQty = ref(0)
 const amount = ref(1)
@@ -55,7 +62,7 @@ watch(
       form.package = props.comp.package ?? ''
       form.manufacturer_part = props.comp.manufacturer_part ?? ''
       form.supplier_part = props.comp.supplier_part ?? ''
-      form.tagsText = (props.comp.tags ?? []).join('，')
+      tags.value = [...(props.comp.tags ?? [])]
       form.threshold = props.comp.threshold
       form.zone = props.comp.zone
       form.layer = props.comp.layer
@@ -68,7 +75,7 @@ watch(
       form.package = ''
       form.manufacturer_part = ''
       form.supplier_part = ''
-      form.tagsText = ''
+      tags.value = []
       form.threshold = 5
       form.zone = p.zone
       form.layer = p.layer
@@ -91,15 +98,6 @@ const layerOptions = computed<SelectOption[]>(() =>
 const slotOptions = computed<SelectOption[]>(() =>
   slots.value.map((s) => ({ value: s, label: String(s) })))
 
-function parseTags(): string[] {
-  const seen: string[] = []
-  for (const raw of form.tagsText.split(/[,，、\s]+/)) {
-    const item = raw.trim().slice(0, 20)
-    if (item && !seen.includes(item) && seen.length < 8) seen.push(item)
-  }
-  return seen
-}
-
 const slots = computed(() =>
   Array.from({ length: props.layout.row_count * props.layout.col_count }, (_, i) => i),
 )
@@ -121,7 +119,7 @@ async function save() {
         package: form.package.trim() || null,
         manufacturer_part: form.manufacturer_part.trim() || null,
         supplier_part: form.supplier_part.trim() || null,
-        tags: parseTags(),
+        tags: [...tags.value],
         quantity: Math.max(0, initQty.value | 0),
         threshold: Math.max(0, form.threshold | 0),
         zone: form.zone, layer: form.layer, slot: form.slot,
@@ -136,7 +134,7 @@ async function save() {
       package: form.package.trim() || null,
       manufacturer_part: form.manufacturer_part.trim() || null,
       supplier_part: form.supplier_part.trim() || null,
-      tags: parseTags(),
+      tags: [...tags.value],
       threshold: Math.max(0, form.threshold | 0),
     }
     const moved = form.zone !== props.comp!.zone || form.layer !== props.comp!.layer
@@ -259,8 +257,8 @@ function close() {
 
                 <div>
                   <label class="field-label">格子标签</label>
-                  <input v-model="form.tagsText" class="input mono" maxlength="200"
-                         placeholder="例：主控、stm32（会显示在格子上）" />
+                  <TagEditor v-model="tags" :suggestions="tagSuggestions"
+                             placeholder="输入后回车，可加多个" />
                 </div>
 
                 <!-- 位置 + 阈值 -->

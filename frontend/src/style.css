@@ -321,8 +321,11 @@ html.light .bin-card {
 @container (max-width: 148px) {
   .bin-card .mpn-line { display: none; }
   .bin-card .chip-led { display: none; }
-  .bin-card .chip-tag { display: none; }
   .bin-card .meta-row { gap: 2px; }
+  .bin-card .chip-tag { padding: 1px 5px; font-size: 8.5px; }
+}
+@container (max-width: 118px) {
+  .bin-card .chip-tag { display: none; }
 }
 @container (max-width: 118px) {
   .bin-card { padding: 8px 8px 0; min-height: 82px; }
@@ -451,3 +454,30 @@ html.light .title-gradient {
   -webkit-background-clip: text;
   background-clip: text;
 }
+/* 标签编辑器（Steam/B站式多标签输入） */
+.tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+}
+.tag-editor .tag-input {
+  flex: 1 1 80px;
+  min-width: 80px;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 2px 0;
+}
+.tag-editor .tag-input::placeholder { color: var(--text-faint); }
+.tag-chip-x {
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 0 3px;
+  line-height: 1;
+  opacity: 0.55;
+}
+.tag-chip-x:hover { opacity: 1; color: var(--danger); }
