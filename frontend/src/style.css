@@ -329,8 +329,9 @@ html.light .chip-tag-show {
 .bin-card.card-selected::after {
   content: '✓';
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: auto;
+  right: 5px;
+  bottom: 5px;
   width: 16px;
   height: 16px;
   border-radius: 999px;
@@ -358,8 +359,10 @@ html.light .chip-tag-show {
   .bin-card .meta-row { gap: 2px; }
   .bin-card .chip-tag { padding: 1px 5px; font-size: 8.5px; }
 }
-@container (max-width: 118px) {
-  .bin-card .chip-tag, .bin-card .chip-tag-show { display: none; }
+@container (max-width: 132px) {
+  .bin-card .card-title { font-size: 12px; }
+  .bin-card .chip-tag-show { padding: 0 5px; font-size: 8px; }
+  .bin-card .chip-pkg { display: none; }
 }
 @container (max-width: 118px) {
   .bin-card { padding: 8px 8px 0; min-height: 82px; }

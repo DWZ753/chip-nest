@@ -268,12 +268,12 @@ function close() {
                 </div>
 
                 <div>
-                  <label class="field-label">格子标签（内部，用于搜索）</label>
+                  <label class="field-label">标签</label>
                   <TagEditor v-model="tags" :suggestions="tagSuggestions"
-                             placeholder="输入后回车，可加多个" />
+                             placeholder="回车添加" />
                 </div>
                 <div v-if="tags.length">
-                  <label class="field-label">显示在格子上的（挑 1–3 个，与名称一起）</label>
+                  <label class="field-label">展示标签</label>
                   <div class="flex flex-wrap gap-1.5">
                     <button v-for="tag in tags" :key="tag" type="button"
                             class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
@@ -282,11 +282,9 @@ function close() {
                               ? 'background: linear-gradient(120deg, #7c6cf0, #8b8ef7); border-color: transparent; color: #fff'
                               : ''"
                             @click="toggleDisplay(tag)">
-                      {{ tag }}
+                      {{ displayTags.includes(tag) ? '✓ ' : '' }}{{ tag }}
                     </button>
                   </div>
-                  <div v-if="displayTags.length === 3" class="mt-1 text-[10.5px]"
-                       style="color: var(--text-faint)">最多 3 个</div>
                 </div>
 
                 <!-- 位置 + 阈值 -->

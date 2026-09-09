@@ -45,21 +45,30 @@ const title = computed(() =>
     @click="emit('click', comp)"
     @keydown.enter="emit('click', comp)"
   >
-    <!-- 头行：长名称 flex 截断，灯号/数量作为独立元素，hover 才显示数量 -->
-    <div class="flex items-center gap-1.5">
+    <!-- 头行：名称 + 外部展示标签内联，灯号/数量收尾；多选时隐藏数量 -->
+    <div class="flex flex-wrap items-center gap-1">
       <span
         class="card-title min-w-0 flex-1 truncate text-[13.5px] font-bold leading-snug"
         :title="comp.name"
       >{{ comp.name }}</span>
-      <span
-        v-if="comp.led_index !== null"
-        class="chip chip-led flex-shrink-0 !px-1.5 !text-[9.5px]"
-        title="灯带序号"
-      >LED{{ comp.led_index }}</span>
-      <span
-        class="qty-hover chip qty-chip num flex-shrink-0 !px-1.5 !text-[10px]"
-        title="当前库存"
-      >× {{ comp.quantity }}</span>
+      <template v-for="tag in (comp.display_tags ?? []).slice(0, 2)" :key="tag">
+        <span class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
+              :title="tag">#{{ tag }}</span>
+      </template>
+      <span v-if="(comp.display_tags ?? []).length > 2" class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
+            :title="(comp.display_tags ?? []).join('、')">+{{ comp.display_tags.length - 2 }}</span>
+      <span class="ml-auto flex items-center gap-1">
+        <span
+          v-if="comp.led_index !== null && !selectable"
+          class="chip chip-led flex-shrink-0 !px-1.5 !text-[9.5px]"
+          title="灯带序号"
+        >LED{{ comp.led_index }}</span>
+        <span
+          v-if="!selectable"
+          class="qty-hover chip qty-chip num flex-shrink-0 !px-1.5 !text-[10px]"
+          title="当前库存"
+        >× {{ comp.quantity }}</span>
+      </span>
     </div>
 
     <div class="meta-row mt-1 flex flex-wrap items-center gap-1">
@@ -72,12 +81,6 @@ const title = computed(() =>
         v-if="comp.package"
         class="chip chip-pkg mono"
       >{{ comp.package }}</span>
-    </div>
-
-    <!-- 外部显示标签：从 tags 中挑选，显示在名称下面最显眼的位置 -->
-    <div v-if="(comp.display_tags ?? []).length" class="mt-1 flex flex-wrap items-center gap-1">
-      <span v-for="tag in comp.display_tags.slice(0, 3)" :key="tag"
-            class="chip chip-tag-show mono !px-2 !py-0.5 !text-[10px] font-bold">{{ tag }}</span>
     </div>
 
     <!-- 厂商料号（MPN）：采购/识别关键字段，窄格自动隐藏 -->

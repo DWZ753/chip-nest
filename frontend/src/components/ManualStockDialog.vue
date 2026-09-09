@@ -38,7 +38,7 @@ const okCount = ref(0)
 let seq = 0
 
 // 表头与数据行共用同一列宽模板，保证严格对齐
-const GRID_COLS = 'minmax(150px,1.5fr) 92px 78px minmax(120px,1.3fr) 104px 66px minmax(120px,1fr) 176px 34px'
+const GRID_COLS = '1.5fr 86px 72px 1.2fr 96px 62px 1fr 152px 30px'
 
 const slotOptions = computed<SelectOption[]>(() =>
   freeOptions.value.map((p) => ({
@@ -173,7 +173,9 @@ watch(() => props.open, (v) => { if (v) setupRows() })
               </div>
 
               <div class="flex flex-col gap-3">
-                <!-- 表头提示列（紧凑网格） -->
+                <!-- 表头与数据行共用横向滚动容器 -->
+                <div class="overflow-x-auto">
+                <div class="min-w-[860px]">
                 <div class="grid gap-2 px-1.5 pb-1 text-[9.5px] font-bold whitespace-nowrap"
                      :style="{ gridTemplateColumns: GRID_COLS, color: 'var(--text-faint)' }">
                   <span>名称</span><span>值</span><span>封装</span><span>厂商料号</span>
@@ -210,6 +212,8 @@ watch(() => props.open, (v) => { if (v) setupRows() })
                 </div>
               </div>
 
+              </div>
+              </div>
               <div class="mt-3 flex items-center gap-2">
                 <button class="btn" @click="addRow">
                   <Plus :size="14" /> 加一行
