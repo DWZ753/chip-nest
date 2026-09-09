@@ -121,7 +121,7 @@ PC→ESP  LED:<idx>,<R>,<G>,<B>    例：LED:25,255,165,0（橙色）
    `available`（剩余量），界面会直接提示补货。
 4. **布局缩小后元件不见了**：它们在“游离区”——网格上方横幅会提示，可一键自动搬入空格。
 
-## 打包（2026-09-08 已实跑出包；当前版本 v0.3.10）
+## 打包（2026-09-08 已实跑出包；当前版本 v0.3.11）
 
 > 版本与仓库：代码托管在 https://github.com/DWZ753/chip-nest（main 分支，发版打 tag）；
 > 界面左上角与「设置 → 版本」会显示当前版本号，用于确认安装是否生效。
@@ -132,7 +132,7 @@ PC→ESP  LED:<idx>,<R>,<G>,<B>    例：LED:25,255,165,0（橙色）
 已产出两个可分发产物：
 
 - `backend/dist/chipnest-backend.exe` —— PyInstaller onefile **免 Python 后端**（约 25MB）
-- `electron/release/ChipNest-Setup-0.3.10.exe` —— **NSIS 安装包**（约 137MB，
+- `electron/release/ChipNest-Setup-0.3.11.exe` —— **NSIS 安装包**（约 137MB，
   已实测：打包版自起后端 exe、页面加载成功、退出后端口清理正常）
 - `electron/release/win-unpacked/` —— 免安装绿色版（可选分发）
 

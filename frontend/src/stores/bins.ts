@@ -66,12 +66,18 @@ export const useBinsStore = defineStore('bins', () => {
       .sort((a, b) => a.zone - b.zone || a.layer - b.layer || a.slot - b.slot)
   })
 
-  function addFlash(keys: string[]) {
+  // 上一次触发过呼吸动画的查询串：避免同查询反复重启动画造成卡顿
+  let lastFlashQuery = ''
+  const FLASH_MS = 1800
+
+  function addFlash(keys: string[], forQuery: string) {
+    if (!forQuery || forQuery === lastFlashQuery) return
+    lastFlashQuery = forQuery
     for (const k of keys) flashKeys.value[k] = true
     window.clearTimeout(flashTimer)
     flashTimer = window.setTimeout(() => {
       flashKeys.value = {}
-    }, 1700)
+    }, FLASH_MS)
   }
 
   async function refreshLayout() {
@@ -84,8 +90,8 @@ export const useBinsStore = defineStore('bins', () => {
     try {
       const rows = await api.listComponents({ q: query.value })
       components.value = rows
-      // 命中检索的行整体呼吸上浮一次
-      if (query.value.trim()) addFlash(rows.map(positionKey))
+      // 命中检索的行整体呼吸上浮一次（同一查询只闪一次）
+      if (query.value.trim()) addFlash(rows.map(positionKey), query.value.trim())
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -100,10 +106,11 @@ export const useBinsStore = defineStore('bins', () => {
 
   function setQuery(q: string) {
     query.value = q
+    if (!q.trim()) lastFlashQuery = ''
     window.clearTimeout(queryTimer)
     queryTimer = window.setTimeout(() => {
       void refreshComponents().catch(() => undefined)
-    }, 220)
+    }, 320)
   }
 
   function upsert(comp: ComponentItem) {

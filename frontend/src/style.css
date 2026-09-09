@@ -467,6 +467,17 @@ html.light .conn-serial { color: #075f83; background: rgba(14, 160, 214, 0.14); 
 html.light .conn-mock { color: #4b3500; background: #ffd166; }
 html.light .conn-off { color: #a02b43; background: rgba(224, 69, 96, 0.12); }
 
+/* 隐藏原生数字增减箭头（用自绘步进组件替代） */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* 细滚动条 */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb {

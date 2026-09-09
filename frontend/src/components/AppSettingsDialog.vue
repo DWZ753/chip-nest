@@ -49,13 +49,13 @@ const MODE_TEXT = {
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="dark ? 'opacity-55' : ''"
                       :style="!dark ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                      @click="setLight(false)"
+                      @click="setLight(true)"
                     ><Sun :size="12" class="mr-1 inline" />浅色</button>
                     <button
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="dark ? '' : 'opacity-55'"
                       :style="dark ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                      @click="setLight(true)"
+                      @click="setLight(false)"
                     ><Moon :size="12" class="mr-1 inline" />深色</button>
                   </div>
                 </section>

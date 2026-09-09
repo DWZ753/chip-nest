@@ -10,6 +10,7 @@ import type { ComponentItem, LayoutConfig } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
+import StepperInput from './ui/StepperInput.vue'
 
 const props = defineProps<{
   open: boolean
@@ -311,9 +312,9 @@ function close() {
                 </div>
 
                 <!-- 新建：初始库存 -->
-                <div v-if="isCreate">
+                <div v-if="isCreate" class="w-40">
                   <label class="field-label">初始库存</label>
-                  <input v-model.number="initQty" class="input num" type="number" min="0" max="99999" />
+                  <StepperInput v-model="initQty" :min="0" :max="99999" />
                 </div>
 
                 <div v-if="errorMsg" class="rounded-xl px-3 py-2 text-[12.5px] font-semibold"
@@ -327,8 +328,8 @@ function close() {
                        style="background: var(--panel); border: 1px solid var(--line)">
                     <span class="text-xs font-semibold" style="color: var(--text-dim)">当前库存</span>
                     <span class="num text-xl font-black" style="color: var(--accent-ink)">{{ localQty }}</span>
-                    <div class="flex items-center gap-1.5">
-                      <input v-model.number="amount" class="input !w-16 !px-2 num text-center" type="number" min="1" max="9999" />
+                    <div class="w-32">
+                      <StepperInput v-model="amount" :min="1" :max="9999" :step="1" />
                     </div>
                   </div>
                   <div class="grid grid-cols-2 gap-2.5">

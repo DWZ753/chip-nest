@@ -10,6 +10,7 @@ import type { BinPosition } from '../stores/bins'
 import { useBinsStore } from '../stores/bins'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
+import StepperInput from './ui/StepperInput.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -38,7 +39,7 @@ const okCount = ref(0)
 let seq = 0
 
 // 表头与数据行共用同一列宽模板，保证严格对齐
-const GRID_COLS = '1.5fr 86px 72px 1.2fr 96px 62px 1fr 152px 30px'
+const GRID_COLS = '1.5fr 86px 72px 1.2fr 96px 96px 1fr 152px 30px'
 
 const slotOptions = computed<SelectOption[]>(() =>
   freeOptions.value.map((p) => ({
@@ -194,8 +195,8 @@ watch(() => props.open, (v) => { if (v) setupRows() })
                       <input v-model="row.package" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
                       <input v-model="row.manufacturerPart" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
                       <input v-model="row.supplierPart" class="input mono !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
-                      <input v-model.number="row.quantity" type="number" min="1"
-                             class="input num !px-2 !py-1 text-[12px] text-center" :disabled="row.status === 'ok'" />
+                      <StepperInput v-model="row.quantity" :min="1" :max="99999"
+                                      :disabled="row.status === 'ok'" />
                       <TagEditor v-model="row.tags" placeholder="标签" compact
  />
                       <NiceSelect v-model="row.posKey" :options="slotOptions"

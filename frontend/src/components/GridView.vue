@@ -144,7 +144,7 @@ async function fixOrphans() {
             <div class="h-px flex-1" style="background: var(--line)" />
           </div>
 
-          <div class="overflow-x-auto pb-1">
+          <div class="overflow-x-auto px-1 pt-2.5 pb-2">
           <div
             class="grid gap-2.5"
             :style="{ gridTemplateColumns: 'repeat(' + bins.layout.col_count + ', minmax(118px, 1fr))' }"
