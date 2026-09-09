@@ -33,3 +33,4 @@ electron/release/
 frontend/vite.config.d.ts
 *.tsbuildinfo
 install.log
+backend/*.log
