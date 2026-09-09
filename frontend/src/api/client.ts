@@ -58,7 +58,15 @@ function qs(params: Record<string, string | number | null | undefined>): string 
   return s ? `?${s}` : ''
 }
 
+export interface HealthInfo {
+  status: string
+  service: string
+  version?: string
+}
+
 export const api = {
+  health: () => request<HealthInfo>('/api/v1/health'),
+
   // 布局
   getLayout: () => request<LayoutConfig>('/api/v1/layout'),
   putLayout: (payload: Omit<LayoutConfig, 'updated_at'>) =>

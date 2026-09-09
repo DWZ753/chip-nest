@@ -27,6 +27,7 @@ const fatal = ref<string | null>(null)
 
 onMounted(async () => {
   connection.connect()
+  void connection.fetchHealth()
   try {
     await bins.refreshAll()
   } catch (e) {

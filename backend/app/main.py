@@ -54,7 +54,7 @@ async def lifespan(_app: FastAPI):
     await get_manager().stop()
 
 
-app = FastAPI(title="ChipNest", version="0.3.1", lifespan=lifespan)
+app = FastAPI(title="ChipNest", version="0.3.5", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,8 +73,8 @@ app.include_router(ws.router)
 
 @app.get("/api/v1/health")
 async def health() -> dict:
-    """存活探针：Electron 主进程轮询此接口等待后端就绪。"""
-    return {"status": "ok", "service": "chipnest-backend"}
+    """存活探针：Electron 主进程轮询此接口等待后端就绪；带版本供前端显示。"""
+    return {"status": "ok", "service": "chipnest-backend", "version": app.version}
 
 # M7 生产同源：前端构建产物存在时由 FastAPI 直接托管（SPA 兜底靠路由顺序：
 # 所有 /api 与 /api/v1/ws 路由先注册，未命中才落到静态目录的 index.html）。

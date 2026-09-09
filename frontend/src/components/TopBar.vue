@@ -3,6 +3,7 @@ import { Boxes, ClipboardList, LayoutGrid, Moon, Search, Settings, Sun } from '@
 
 import { useBinsStore } from '../stores/bins'
 import { useTheme } from '../stores/theme'
+import { useConnectionStore } from '../stores/connection'
 import ConnectionDot from './ConnectionDot.vue'
 
 const emit = defineEmits<{
@@ -12,6 +13,7 @@ const emit = defineEmits<{
 }>()
 
 const bins = useBinsStore()
+const connection = useConnectionStore()
 const { dark, toggle } = useTheme()
 // dark=true ⇔ 当前深色（默认）
 </script>
@@ -31,6 +33,8 @@ const { dark, toggle } = useTheme()
       <div class="hidden leading-tight md:block">
         <div class="title-gradient text-[15px] font-extrabold tracking-wide">
           ChipNest
+          <span v-if="connection.version" class="mono ml-1 align-middle text-[9.5px] font-bold"
+                style="color: var(--text-faint)">v{{ connection.version }}</span>
         </div>
         <div class="text-[10px] font-medium tracking-[0.18em]" style="color: var(--text-faint)">
           智能元件管家

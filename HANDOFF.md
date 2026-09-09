@@ -114,7 +114,7 @@ chip-nest/
 - PyInstaller onefile → backend/dist/chipnest-backend.exe（约 25MB；--collect-all pypinyin + --collect-submodules uvicorn +
   --hidden-import aiosqlite/greenlet/websockets）。独立运行实测：health、中文建档、拼音检索 dz、0603、bom/plan、system/status 全通。
 - electron-builder：extraResources 收 backend/chipnest-backend.exe 与 frontend_dist（frontend/dist）；--win --dir 的 win-unpacked
-  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.4.exe（约 130MB）。
+  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.5.exe（约 130MB）。
 - 注意：安装包**未代码签名**（SmartScreen 提示属预期）；nsis 为交互式向导（oneClick:false，无人值守 /S 不适用，需人工下一步）。
 
 ### V0.3.0 迭代（专业性与可用性 ✅，同日完成）
@@ -134,6 +134,14 @@ chip-nest/
   q=CL05/104KB 检索全通；vue-tsc + vite build 零错误；DOM 冒烟显示区名与 MPN；
   win-unpacked CHIPNEST_SMOKE=1 页面加载成功。产物 v0.3.0。
 
+### V0.3.5 版本可视化 + GitHub 托管 + 升级缓存修复 ✅
+- 后端 /api/v1/health 返回 version（app.version 唯一版本源，本次校正：0.3.2~0.3.4 期间
+  main.py 版本号未随前端升，已统一为 0.3.5）；前端左上角 ChipNest 旁与「设置→版本」显示 vX.Y.Z。
+- Electron 每次启动先 clearCache 再加载（旧 index.html 被磁盘缓存命中导致“升级不生效”的元凶）；
+  冒烟升级为：三接口 200 + UI 标记（仓库布局按钮）+ 版本号前缀校验，全过才退出 0。
+- 仓库：git init + 远程 https://github.com/DWZ753/chip-nest（main）；.gitignore 覆盖构建产物；
+  发版打 tag（v0.3.5 起）。安装包/后端 exe 不入库（体积大，按 README 重建）。
+- 产物 v0.3.5：冒烟 exit=0、probe=[200,200,200,'0.3.5']、ui-marker=true。
 ### V0.3.4 标签 + 设置拆分 + 文案去注释化 ✅
 - components.tags（JSON 数组，≤8 个/每个 ≤20 字符）：alembic 0003 + 冻结增量补列（db.py 清单同步）；
   检索文本纳入标签；EditDialog 逗号输入维护，BinCard #标签 chips（≤2 +N，窄格隐藏）；
@@ -185,7 +193,7 @@ chip-nest/
   vue-tsc + vite build 零错误；headless DOM 冒烟确认 ZONE 标签/元件卡/MOCK 胶囊渲染；
   新 UI 截图存 `frontend/preview-tech-dark.png`（视觉 API 限流未人工复核，请目测）。
 - 产物重建为 **v0.2.0**：backend/dist/chipnest-backend.exe + electron/release/
-  ChipNest-Setup-0.3.4.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
+  ChipNest-Setup-0.3.5.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
 
 ## 4. 完成状态与收尾清单（M1–M7 + 打包 ✅，2026-09-08）
 
@@ -196,7 +204,7 @@ chip-nest/
 - M5 ✅ 前端骨架 + 设计系统（§3）
 - M6 ✅ 核心视图与动效（§3）
 - M7 ✅ Electron 壳 + ESP32 固件 + 打包配置（§3）
-- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.4.exe（重建命令见 README「打包」）
+- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.5.exe（重建命令见 README「打包」）
 
 ### 收尾清单（剩余为可选增强/需人工）
 - ⏳ 安装包 UI 走查：NSIS 向导/快捷方式/卸载（无人值守只验证到 win-unpacked 冒烟）。

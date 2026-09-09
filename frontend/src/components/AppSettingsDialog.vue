@@ -82,6 +82,15 @@ const MODE_TEXT = {
                   </div>
                 </section>
 
+                <!-- 版本 -->
+                <section class="flex items-center justify-between rounded-2xl px-4 py-3 text-[12.5px]"
+                         style="background: var(--panel); border: 1px solid var(--line)">
+                  <span class="font-bold">版本</span>
+                  <span class="mono font-bold" style="color: var(--accent)">
+                    {{ connection.version ? 'v' + connection.version : '—' }}
+                  </span>
+                </section>
+
                 <!-- 硬件状态 -->
                 <section class="rounded-2xl px-4 py-3 text-[12.5px]"
                          style="background: var(--panel); border: 1px solid var(--line)">

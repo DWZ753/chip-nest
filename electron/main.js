@@ -119,7 +119,7 @@ function waitBackend(timeoutMs, intervalMs) {
 }
 
 // ---------- 窗口 ----------
-function createWindow() {
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1380,
     height: 900,
@@ -127,13 +127,18 @@ function createWindow() {
     minHeight: 720,
     autoHideMenuBar: true,
     backgroundColor: '#1f1c19',
-    title: 'ChipNest · 智能元件管家',
+    title: `ChipNest v${app.getVersion()} · 智能元件管家`,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
+  // 每次启动先清 HTTP 磁盘缓存：升级后旧 index.html 可能被缓存命中
+  try {
+    await mainWindow.webContents.session.clearCache();
+  } catch { /* 清理失败不阻塞启动 */ }
+  // 注意：不要 await loadURL——后续 did-finish-load 监听必须先行注册
   mainWindow.loadURL(IS_DEV ? DEV_URL : PROD_URL);
   // 冒烟模式：加载完成后自动退出（CI/自检用，弹窗仅一闪而过）
   if (process.env.CHIPNEST_SMOKE === '1') {
@@ -141,22 +146,32 @@ function createWindow() {
       console.log('[chipnest-smoke] 页面加载成功，探测数据接口…');
       const probe = await mainWindow.webContents
         .executeJavaScript(
-          "Promise.all(['/api/v1/layout','/api/v1/components','/api/v1/system/status']" +
-          ".map(p => fetch(p).then(r => r.status).catch(() => 0)))",
+          "Promise.all(" +
+          "['/api/v1/layout','/api/v1/components','/api/v1/system/status']" +
+          ".map(u => fetch(u).then(r => r.status).catch(() => 0))" +
+          ".concat(fetch('/api/v1/health').then(r => r.json())" +
+          ".then(j => j.version || '').catch(() => '')))",
         )
-        .catch(() => [0, 0, 0]);
-      console.log('[chipnest-smoke] probe =', JSON.stringify(probe));
-      if (probe.length === 3 && probe.every((s) => s === 200)) {
-        console.log('[chipnest-smoke] 数据接口全部 200，冒烟通过');
+        .catch(() => [0, 0, 0, '']);
+      // 等首屏渲染稳定后再查 UI 标记
+      await new Promise((res) => setTimeout(res, 900));
+      const marker = await mainWindow.webContents
+        .executeJavaScript("(document.body.innerHTML || '').includes('仓库布局')")
+        .catch(() => false);
+      console.log('[chipnest-smoke] probe =', JSON.stringify(probe),
+                  '| ui-marker =', marker);
+      const apiOk = probe[0] === 200 && probe[1] === 200 && probe[2] === 200;
+      if (apiOk && marker && String(probe[3]).startsWith('0.3')) {
+        console.log('[chipnest-smoke] 版本', probe[3], '· UI 标记存在 · 冒烟通过');
         setTimeout(() => app.quit(), 600);
       } else {
-        console.error('[chipnest-smoke] 数据接口异常，冒烟失败');
-        app.exit(3);
+        console.error('[chipnest-smoke] 冒烟失败（接口/UI 标记/版本校验不过）');
+        failSmoke(3);
       }
     });
     mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
       console.error('[chipnest-smoke] 页面加载失败', code, desc);
-      app.exit(2);
+      failSmoke(2);
     });
   }
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -167,16 +182,21 @@ app.whenReady().then(async () => {
   startBackend();
   try {
     await waitBackend(30000, 400);
-    createWindow();
+    await createWindow();
   } catch (err) {
     console.error('[chipnest]', err.message);
     app.exit(1);
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
 });
+
+function failSmoke(code) {
+  try { app.exit(code); } catch { /* 忽略 */ }
+  setTimeout(() => process.exit(code), 800);
+}
 
 // 退出前杀后端进程树（Windows：taskkill /T /F，含 uvicorn 子进程）
 function killBackendTree() {
