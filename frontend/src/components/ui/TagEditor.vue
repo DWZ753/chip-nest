@@ -51,6 +51,40 @@ function focusInput() {
   nextTick(() => inputEl.value?.focus())
 }
 
+// ---------- 拖拽排序 ----------
+const dragIndex = ref(-1)
+const dropIndex = ref(-1)
+
+function onDragStart(index: number, ev: DragEvent) {
+  dragIndex.value = index
+  dropIndex.value = index
+  ev.dataTransfer?.setData('text/plain', String(index))
+  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
+}
+
+function onDragOver(index: number, ev: DragEvent) {
+  ev.preventDefault()
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+  dropIndex.value = index
+}
+
+function onDrop(index: number, ev: DragEvent) {
+  ev.preventDefault()
+  const from = dragIndex.value
+  dragIndex.value = -1
+  dropIndex.value = -1
+  if (from < 0 || from === index) return
+  const list = [...chips.value]
+  const [moved] = list.splice(from, 1)
+  list.splice(index, 0, moved)
+  chips.value = list
+}
+
+function onDragEnd() {
+  dragIndex.value = -1
+  dropIndex.value = -1
+}
+
 function handleBlur() {
   window.setTimeout(() => {
     focusOpen.value = false
@@ -71,8 +105,15 @@ function removeTag(tag: string) {
       style="border-color: var(--line-strong); background: rgba(255,255,255,.035)"
       @click="focusInput"
     >
-      <span v-for="tag in chips" :key="tag"
-            class="chip chip-tag !px-1.5 !text-[10.5px] !py-0.5">
+      <span v-for="(tag, i) in chips" :key="tag"
+            class="chip chip-tag tag-drag !px-1.5 !text-[10.5px] !py-0.5"
+            :class="{ 'tag-dragging': dragIndex === i, 'tag-drop-target': dropIndex === i && dragIndex !== i }"
+            draggable="true"
+            :title="'拖动可调整顺序：' + tag"
+            @dragstart="onDragStart(i, $event)"
+            @dragover="onDragOver(i, $event)"
+            @drop="onDrop(i, $event)"
+            @dragend="onDragEnd">
         #{{ tag }}
         <button type="button" class="tag-chip-x" :title="'删除 ' + tag" @click.stop="removeTag(tag)">
           <X :size="10" />

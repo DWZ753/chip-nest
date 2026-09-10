@@ -158,7 +158,7 @@ async function save() {
         manufacturer_part: form.manufacturer_part.trim() || null,
         supplier_part: form.supplier_part.trim() || null,
         tags: [...tags.value],
-        display_tags: displayTags.value.filter((t) => tags.value.includes(t)),
+        display_tags: tags.value.filter((t) => displayTags.value.includes(t)),
         quantity: Math.max(0, initQty.value | 0),
         threshold: Math.max(0, form.threshold | 0),
         zone: form.zone, layer: form.layer, slot: form.slot,
@@ -174,7 +174,7 @@ async function save() {
       manufacturer_part: form.manufacturer_part.trim() || null,
       supplier_part: form.supplier_part.trim() || null,
       tags: [...tags.value],
-      display_tags: displayTags.value.filter((t) => tags.value.includes(t)),
+      display_tags: tags.value.filter((t) => displayTags.value.includes(t)),
       threshold: Math.max(0, form.threshold | 0),
     }
     const moved = form.zone !== props.comp!.zone || form.layer !== props.comp!.layer

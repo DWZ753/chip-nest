@@ -604,3 +604,10 @@ html.light .bin-card.has-supplier {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 标签拖拽排序反馈 */
+.tag-drag { cursor: grab; }
+.tag-drag:active { cursor: grabbing; }
+.tag-dragging { opacity: 0.4; }
+.tag-drop-target {
+  box-shadow: -2px 0 0 0 var(--accent);
+}
