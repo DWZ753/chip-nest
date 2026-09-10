@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Plus, Trash2, TriangleAlert } from '@lucide/vue'
+import { Check, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
 
 import type { ComponentItem } from '../api/types'
 import { positionKey, useBinsStore, zoneName, type BinPosition } from '../stores/bins'
@@ -34,6 +34,27 @@ function toggleSelect(comp: ComponentItem) {
   if (next.has(comp.id)) next.delete(comp.id)
   else next.add(comp.id)
   selectedIds.value = next
+}
+
+// 区名就地编辑
+const editingZone = ref(0)
+const zoneDraft = ref('')
+
+function startZoneEdit(zone: number) {
+  editingZone.value = zone
+  zoneDraft.value = bins.layout.zone_names?.[zone - 1] ?? ''
+}
+
+async function saveZoneEdit(zone: number) {
+  try {
+    await bins.updateZoneName(zone, zoneDraft.value)
+  } finally {
+    editingZone.value = 0
+  }
+}
+
+function cancelZoneEdit() {
+  editingZone.value = 0
 }
 
 function onCard(comp: ComponentItem) {
@@ -125,9 +146,22 @@ async function fixOrphans() {
     >
       <div class="mb-4 flex items-end gap-3">
         <div class="flex flex-col">
-          <h2 class="text-xl font-extrabold tracking-[0.12em]">
-            {{ zoneName(bins.layout, zone) }}
-          </h2>
+          <div v-if="editingZone === zone" class="flex items-center gap-1.5">
+            <input v-model="zoneDraft" class="input !py-1.5 text-lg font-extrabold" maxlength="24"
+                   :placeholder="'第 ' + zone + ' 区'" autofocus
+                   @keydown.enter="saveZoneEdit(zone)" @keydown.esc="cancelZoneEdit" />
+            <button class="icon-btn !h-8 !w-8" title="保存区名" @click="saveZoneEdit(zone)"><Check :size="15" /></button>
+            <button class="icon-btn !h-8 !w-8" title="取消" @click="cancelZoneEdit"><X :size="15" /></button>
+          </div>
+          <div v-else class="group flex items-center gap-1.5">
+            <h2 class="text-xl font-extrabold tracking-[0.12em]">
+              {{ zoneName(bins.layout, zone) }}
+            </h2>
+            <button class="icon-btn !h-7 !w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                    title="修改区名" @click="startZoneEdit(zone)">
+              <Pencil :size="13" />
+            </button>
+          </div>
         </div>
         <div class="mb-0.5 flex items-center gap-1.5">
           <span class="chip mono !text-[10px]">共 {{ bins.layout.layer_count }} 层</span>

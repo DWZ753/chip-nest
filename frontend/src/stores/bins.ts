@@ -100,6 +100,21 @@ export const useBinsStore = defineStore('bins', () => {
     }
   }
 
+  // 就地修改区名（无需进仓库布局）
+  async function updateZoneName(zone: number, name: string) {
+    const names = Array.from({ length: layout.value.zone_count }, (_, i) =>
+      (layout.value.zone_names?.[i] ?? '').slice(0, 24))
+    names[zone - 1] = name.trim().slice(0, 24)
+    const saved = await api.putLayout({
+      zone_count: layout.value.zone_count,
+      layer_count: layout.value.layer_count,
+      row_count: layout.value.row_count,
+      col_count: layout.value.col_count,
+      zone_names: names,
+    })
+    layout.value = saved
+  }
+
   async function refreshAll() {
     await Promise.all([refreshLayout(), refreshComponents()])
   }
@@ -163,6 +178,7 @@ export const useBinsStore = defineStore('bins', () => {
     layout, components, loading, error, query, flashKeys, guideKey,
     compsByKey, orphanComps,
     refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
+    updateZoneName,
     removeComponent, adjustStock, relocateOrphans, setGuidePosition,
   }
 })

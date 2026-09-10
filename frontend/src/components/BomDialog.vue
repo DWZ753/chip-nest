@@ -253,7 +253,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                     <Play :size="15" /> 匹配库存并规划
                   </button>
                   <button class="btn btn-primary" :disabled="!parsed || busy" @click="openImportList">
-                    <ListPlus :size="15" /> 整表入库（购买清单）
+                    <ListPlus :size="15" /> 整表入库
                   </button>
                 </div>
 
@@ -326,7 +326,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                   </div>
                 </template>
 
-                <div class="mt-1 flex items-center gap-2">
+                <div v-if="plan" class="mt-1 flex items-center gap-2">
                   <span class="text-[11px]" style="color: var(--text-faint)">引导时每步自动出库并记入操作流水</span>
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="emit('close')">关闭</button>
@@ -339,7 +339,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
               <!-- ========== 整表入库（购买清单）：逐项选格 ========== -->
               <div v-else class="flex min-h-0 flex-col gap-3">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm font-extrabold">按购买清单逐项入库</span>
+                  <span class="text-sm font-extrabold">整表入库</span>
                   <span v-if="fileName" class="chip mono !text-[10px]" style="color: var(--accent)">{{ fileName }}</span>
                   <span class="chip mono !text-[10px]">{{ rows.length }} 项</span>
                   <button class="btn btn-ghost ml-auto !py-1 text-xs" @click="view = 'work'">返回</button>

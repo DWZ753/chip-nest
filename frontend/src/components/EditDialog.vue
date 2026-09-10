@@ -106,6 +106,15 @@ const slots = computed(() =>
   Array.from({ length: props.layout.row_count * props.layout.col_count }, (_, i) => i),
 )
 
+const urgency = computed(() => {
+  const q = localQty.value
+  const t = Math.max(1, form.threshold | 0)
+  if (q <= 0) return { text: '缺货', color: 'var(--danger)', border: 'color-mix(in srgb, var(--danger) 55%, var(--line))' }
+  if (q < t / 2) return { text: '告急', color: 'var(--danger)', border: 'color-mix(in srgb, var(--danger) 45%, var(--line))' }
+  if (q < t) return { text: '偏低', color: 'var(--warn)', border: 'color-mix(in srgb, var(--warn) 50%, var(--line))' }
+  return { text: '充足', color: 'var(--success)', border: 'var(--line)' }
+})
+
 function fail(e: unknown) {
   errorMsg.value = e instanceof Error ? e.message : String(e)
 }
@@ -324,21 +333,29 @@ function close() {
 
                 <!-- 入出库（编辑态） -->
                 <template v-if="!isCreate">
-                  <div class="flex items-center justify-between rounded-2xl px-3 py-2.5"
-                       style="background: var(--panel); border: 1px solid var(--line)">
-                    <span class="text-xs font-semibold" style="color: var(--text-dim)">当前库存</span>
-                    <span class="num text-xl font-black" style="color: var(--accent-ink)">{{ localQty }}</span>
-                    <div class="w-32">
-                      <StepperInput v-model="amount" :min="1" :max="9999" :step="1" />
+                  <div class="rounded-2xl px-3.5 py-3"
+                       :style="'background: var(--panel); border: 1px solid ' + urgency.border">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-semibold" style="color: var(--text-dim)">当前库存</span>
+                      <span class="num text-2xl font-black" :style="'color:' + urgency.color">{{ localQty }}</span>
+                      <span class="chip" :style="'color:' + urgency.color + '; border-color:' + urgency.border">
+                        {{ urgency.text }}
+                      </span>
+                      <span class="ml-auto text-[11px]" style="color: var(--text-faint)">
+                        阈值 {{ form.threshold }}
+                      </span>
                     </div>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2.5">
-                    <button class="btn" :disabled="busy" @click="stock(-1)">
-                      <Minus :size="15" /> 出库
-                    </button>
-                    <button class="btn btn-primary" :disabled="busy" @click="stock(1)">
-                      <Plus :size="15" /> 入库
-                    </button>
+                    <div class="mt-2.5 flex items-center gap-2">
+                      <button class="btn flex-1" :disabled="busy" @click="stock(-1)">
+                        <Minus :size="15" /> 出库
+                      </button>
+                      <div class="w-28 flex-shrink-0">
+                        <StepperInput v-model="amount" :min="1" :max="9999" :step="1" />
+                      </div>
+                      <button class="btn btn-primary flex-1" :disabled="busy" @click="stock(1)">
+                        <Plus :size="15" /> 入库
+                      </button>
+                    </div>
                   </div>
                 </template>
 

@@ -241,12 +241,11 @@ html.light .input:focus, html.light .select:focus, html.light .textarea:focus {
 }
 .field-label {
   display: block;
-  font-family: var(--f-mono);
-  font-size: 10.5px;
+  font-family: var(--f-display);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  color: var(--text-faint);
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
   margin-bottom: 6px;
 }
 
@@ -256,7 +255,7 @@ html.light .input:focus, html.light .select:focus, html.light .textarea:focus {
   gap: 4px;
   border-radius: 6px;
   padding: 2px 8px;
-  font-family: var(--f-mono);
+  font-family: var(--f-display);
   font-size: 11px;
   font-weight: 600;
   background: var(--surface);
@@ -343,6 +342,9 @@ html.light .chip-tag-show {
   z-index: 2;
 }
 
+/* 显式等宽（型号/数值）覆盖 chip 默认字体 */
+.chip.mono { font-family: var(--f-mono); }
+
 /* 用户格子标签小胶囊：与值/封装同排，紫罗兰描边高对比 */
 .chip-tag {
   background: color-mix(in srgb, var(--violet) 16%, var(--surface));
@@ -387,10 +389,16 @@ html.light .chip-tag-show {
 .card-empty svg { opacity: 0; transform: scale(0.85); transition: opacity 0.2s, transform 0.2s; }
 .card-empty:hover svg { opacity: 0.9; transform: scale(1); }
 
-/* 底部库存色带：霓虹三态 */
-.band {
+/* 底部库存色带：轨道常显 + 填充三态；缺货满格脉冲告急 */
+.band-track {
   height: 3px;
   margin-top: auto;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--text-faint) 22%, transparent);
+  overflow: hidden;
+}
+.band {
+  height: 100%;
   border-radius: 2px 2px 0 0;
   transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.3s;
   box-shadow: 0 0 8px currentColor;
@@ -398,6 +406,16 @@ html.light .chip-tag-show {
 .band-ok { background: var(--success); color: var(--success); }
 .band-warn { background: var(--warn); color: var(--warn); }
 .band-low { background: var(--danger); color: var(--danger); }
+.band-empty {
+  background: var(--danger);
+  color: var(--danger);
+  opacity: 0.75;
+  animation: bandAlarm 1.4s ease-in-out infinite;
+}
+@keyframes bandAlarm {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.95; }
+}
 
 /* 检索命中：卡片轻微上浮；辉光用独立图层做连续线性淡出（无阶梯感） */
 @keyframes hitLift {

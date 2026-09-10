@@ -5,7 +5,7 @@ import {
   Listbox, ListboxButton, ListboxOption, ListboxOptions,
 } from '@headlessui/vue'
 
-// 通用玻璃下拉：替代原生 select（原生弹出菜单无法美化）
+// 通用玻璃下拉：面板 Teleport 到 body，避免被滚动/裁剪容器切掉
 export interface SelectOption {
   value: string | number
   label: string
@@ -33,45 +33,61 @@ const selectedLabel = computed(() =>
 )
 const hasValue = computed(() =>
   props.modelValue !== null && props.modelValue !== undefined && props.modelValue !== '')
+
+// 面板位置：按触发按钮的视口坐标定位，必要时向上翻转
+const panel = { left: 0, top: 0, width: 160, maxH: 240 }
+function place(ev: Event) {
+  const el = ev.currentTarget as HTMLElement | null
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const below = window.innerHeight - r.bottom - 10
+  const above = r.top - 10
+  const up = below < 200 && above > below
+  const maxH = Math.max(140, Math.min(280, up ? above : below))
+  panel.left = r.left
+  panel.width = Math.max(r.width, 150)
+  panel.maxH = maxH
+  panel.top = up ? r.top - maxH - 6 : r.bottom + 6
+}
 </script>
 
 <template>
-  <Listbox v-model="current" :disabled="disabled">
-    <div class="relative">
-      <ListboxButton
-        class="input flex items-center justify-between gap-1 !py-2 text-left disabled:opacity-50"
-        :style="hasValue ? 'background-image: none' : 'color: var(--text-faint); background-image: none'"
+  <Listbox v-model="current" :disabled="disabled" as="div" v-slot="{ open }">
+    <ListboxButton
+      class="input flex items-center justify-between gap-1 !py-2 text-left disabled:opacity-50"
+      :style="hasValue ? 'background-image: none' : 'color: var(--text-faint); background-image: none'"
+      @click="place"
+      @keydown.enter="place"
+      @keydown.space="place"
+      @keydown.up="place"
+      @keydown.down="place"
+    >
+      <span class="truncate">{{ selectedLabel }}</span>
+      <ChevronDown :size="13" class="ml-1 flex-shrink-0 opacity-60" />
+    </ListboxButton>
+
+    <Teleport to="body">
+      <ListboxOptions
+        v-if="open"
+        static
+        class="glass-strong fixed z-[300] overflow-y-auto rounded-xl p-1"
+        :style="{ left: panel.left + 'px', top: panel.top + 'px', width: panel.width + 'px', maxHeight: panel.maxH + 'px' }"
       >
-        <span class="truncate">{{ selectedLabel }}</span>
-        <ChevronDown :size="13" class="ml-1 flex-shrink-0 opacity-60" />
-      </ListboxButton>
-      <Transition
-        enter="transition duration-100 ease-out"
-        enter-from="opacity-0 scale-95"
-        enter-to="opacity-100 scale-100"
-        leave="transition duration-75 ease-in"
-        leave-from="opacity-100 scale-100"
-        leave-to="opacity-0 scale-95"
-      >
-        <ListboxOptions
-          class="glass-strong absolute z-50 mt-1 max-h-64 w-full min-w-[140px] overflow-y-auto rounded-xl p-1"
+        <ListboxOption
+          v-for="opt in options" :key="String(opt.value)" :value="opt.value" as="template"
+          v-slot="{ active, selected }"
         >
-          <ListboxOption
-            v-for="opt in options" :key="String(opt.value)" :value="opt.value" as="template"
-            v-slot="{ active, selected }"
+          <li
+            class="flex cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px]"
+            :style="active ? 'background: var(--accent-dim)' : ''"
           >
-            <li
-              class="flex cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px]"
-              :style="active ? 'background: var(--accent-dim)' : ''"
-            >
-              <span class="flex-1 truncate" :style="selected ? 'color: var(--accent-ink); font-weight: 700' : ''">
-                {{ opt.label }}
-              </span>
-              <Check v-if="selected" :size="13" style="color: var(--accent)" />
-            </li>
-          </ListboxOption>
-        </ListboxOptions>
-      </Transition>
-    </div>
+            <span class="flex-1 truncate" :style="selected ? 'color: var(--accent-ink); font-weight: 700' : ''">
+              {{ opt.label }}
+            </span>
+            <Check v-if="selected" :size="13" style="color: var(--accent)" />
+          </li>
+        </ListboxOption>
+      </ListboxOptions>
+    </Teleport>
   </Listbox>
 </template>

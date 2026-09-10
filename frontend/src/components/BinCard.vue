@@ -16,15 +16,16 @@ const emit = defineEmits<{ click: [ComponentItem] }>()
 const bandCls = computed(() => {
   const q = props.comp.quantity
   const t = props.comp.threshold
-  if (q <= 0 || (t > 0 && q < t / 2)) return 'band-low'
+  if (q <= 0) return 'band-empty'
+  if (t > 0 && q < t / 2) return 'band-low'
   if (t > 0 && q < t) return 'band-warn'
   return 'band-ok'
 })
 
-// 色带宽度：以 threshold 为满刻度；threshold=0 时按有/无货
+// 色带宽度：以 threshold 为满刻度；0 库存满格告急，避免“条消失=不紧急”的错觉
 const bandWidth = computed(() => {
   const { quantity: q, threshold: t } = props.comp
-  if (q <= 0) return '0%'
+  if (q <= 0) return '100%'
   if (t <= 0) return '100%'
   return Math.min(100, Math.round((q / t) * 100)) + '%'
 })
@@ -63,18 +64,6 @@ const title = computed(() =>
       >× {{ comp.quantity }}</span>
     </div>
 
-    <!-- 展示标签：卡片中部空白区独立成行，任何宽度都显示 -->
-    <div v-if="(comp.display_tags ?? []).length"
-         class="mt-1 flex flex-wrap items-center gap-1">
-      <template v-for="tag in (comp.display_tags ?? []).slice(0, 2)" :key="tag">
-        <span class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
-              :title="tag">#{{ tag }}</span>
-      </template>
-      <span v-if="(comp.display_tags ?? []).length > 2"
-            class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
-            :title="(comp.display_tags ?? []).join('、')">+{{ comp.display_tags.length - 2 }}</span>
-    </div>
-
     <div class="meta-row mt-1 flex flex-wrap items-center gap-1">
       <span
         v-if="comp.value"
@@ -87,6 +76,18 @@ const title = computed(() =>
       >{{ comp.package }}</span>
     </div>
 
+    <!-- 展示标签：卡片中部空白区独立成行，任何宽度都显示 -->
+    <div v-if="(comp.display_tags ?? []).length"
+         class="mt-1 flex flex-wrap items-center gap-1">
+      <template v-for="tag in (comp.display_tags ?? []).slice(0, 2)" :key="tag">
+        <span class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
+              :title="tag">#{{ tag }}</span>
+      </template>
+      <span v-if="(comp.display_tags ?? []).length > 2"
+            class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
+            :title="(comp.display_tags ?? []).join('、')">+{{ comp.display_tags.length - 2 }}</span>
+    </div>
+
     <!-- 厂商料号（MPN）：采购/识别关键字段，窄格自动隐藏 -->
     <div
       v-if="comp.manufacturer_part"
@@ -96,7 +97,9 @@ const title = computed(() =>
     >{{ comp.manufacturer_part }}</div>
 
     <div class="flex-1" />
-    <div class="band -mx-3 mt-2" :class="bandCls" :style="{ width: bandWidth }" />
+    <div class="band-track -mx-3 mt-2">
+      <div class="band" :class="bandCls" :style="{ width: bandWidth }" />
+    </div>
     <!-- 搜索命中的辉光层（线性淡出） -->
     <div v-if="flashing" class="flash-layer" />
   </div>
