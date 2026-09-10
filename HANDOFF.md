@@ -114,7 +114,7 @@ chip-nest/
 - PyInstaller onefile → backend/dist/chipnest-backend.exe（约 25MB；--collect-all pypinyin + --collect-submodules uvicorn +
   --hidden-import aiosqlite/greenlet/websockets）。独立运行实测：health、中文建档、拼音检索 dz、0603、bom/plan、system/status 全通。
 - electron-builder：extraResources 收 backend/chipnest-backend.exe 与 frontend_dist（frontend/dist）；--win --dir 的 win-unpacked
-  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.14.exe（约 130MB）。
+  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.15.exe（约 130MB）。
 - 注意：安装包**未代码签名**（SmartScreen 提示属预期）；nsis 为交互式向导（oneClick:false，无人值守 /S 不适用，需人工下一步）。
 
 ### V0.3.0 迭代（专业性与可用性 ✅，同日完成）
@@ -134,6 +134,14 @@ chip-nest/
   q=CL05/104KB 检索全通；vue-tsc + vite build 零错误；DOM 冒烟显示区名与 MPN；
   win-unpacked CHIPNEST_SMOKE=1 页面加载成功。产物 v0.3.0。
 
+### V0.3.15 区管理按钮化 + 弹窗溢出 + 批量清料号 ✅
+- 区数无法修改的真因：LayoutDialog 的 watch 挂在 [open, zone_count] 上，改数字即触发“从已保存布局重载”
+  被弹回 1。现拆分为：open 才重载；zone_count 变化只补齐/裁剪数组。
+- 按需求改为按钮式：仓库布局里「＋ 新建区」与每区「删除（两步确认）」；层数共用，库存数据共用；
+  删除区后区内元件变游离，可用网格横幅一键搬回。
+- BOM 弹窗内容区加 min-h-0 flex-1 overflow-y-auto：缺料 13 行不再溢出玻璃面板；缺料表格改实底。
+- 多选新增「清除供应商料号」（两步确认，逐个 PATCH supplier_part=""），用于工程结束后清理项目专用编号。
+- 产物 v0.3.15：冒烟 exit=0 probe=[200,200,200,'0.3.15'] ui-marker=true。
 ### V0.3.14 每区独立尺寸 + 文案与排版修正 ✅
 - layout_configs.zone_sizes（JSON [[行,列]...]，缺项沿用 row_count/col_count）：alembic 0005 +
   冻结增量列；Layout API 出入参带 zone_sizes；stock.zone_grid() 按区校验 slot 越界；
@@ -261,7 +269,7 @@ chip-nest/
   vue-tsc + vite build 零错误；headless DOM 冒烟确认 ZONE 标签/元件卡/MOCK 胶囊渲染；
   新 UI 截图存 `frontend/preview-tech-dark.png`（视觉 API 限流未人工复核，请目测）。
 - 产物重建为 **v0.2.0**：backend/dist/chipnest-backend.exe + electron/release/
-  ChipNest-Setup-0.3.14.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
+  ChipNest-Setup-0.3.15.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
 
 ## 4. 完成状态与收尾清单（M1–M7 + 打包 ✅，2026-09-08）
 
@@ -272,7 +280,7 @@ chip-nest/
 - M5 ✅ 前端骨架 + 设计系统（§3）
 - M6 ✅ 核心视图与动效（§3）
 - M7 ✅ Electron 壳 + ESP32 固件 + 打包配置（§3）
-- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.14.exe（重建命令见 README「打包」）
+- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.15.exe（重建命令见 README「打包」）
 
 ### 收尾清单（剩余为可选增强/需人工）
 - ⏳ 安装包 UI 走查：NSIS 向导/快捷方式/卸载（无人值守只验证到 win-unpacked 冒烟）。

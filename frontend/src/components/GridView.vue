@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { Check, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
 
+import { api } from '../api/client'
 import type { ComponentItem } from '../api/types'
 import { positionKey, useBinsStore, zoneGrid, zoneName, type BinPosition } from '../stores/bins'
 import BinCard from './BinCard.vue'
@@ -62,6 +63,24 @@ function onCard(comp: ComponentItem) {
   else emit('edit', comp)
 }
 
+const confirmClearSupplier = ref(false)
+let clearTimer: ReturnType<typeof setTimeout> | undefined
+
+async function clearSupplierParts() {
+  if (!confirmClearSupplier.value) {
+    confirmClearSupplier.value = true
+    window.clearTimeout(clearTimer)
+    clearTimer = window.setTimeout(() => { confirmClearSupplier.value = false }, 3500)
+    return
+  }
+  window.clearTimeout(clearTimer)
+  for (const id of selectedIds.value) {
+    await api.patchComponent(id, { supplier_part: '' })
+  }
+  confirmClearSupplier.value = false
+  exitBatch()
+}
+
 async function deleteSelected() {
   if (!confirmDelete.value) {
     confirmDelete.value = true
@@ -110,6 +129,10 @@ async function fixOrphans() {
         <span class="chip num">已选 {{ selectedIds.size }} 个</span>
         <button class="btn btn-danger !py-1.5 text-xs" @click="deleteSelected">
           <Trash2 :size="13" /> {{ confirmDelete ? '确认删除？' : '删除所选' }}
+        </button>
+        <button class="btn !py-1.5 text-xs" title="清空所选元件的供应商料号（工程专用编号）"
+                @click="clearSupplierParts">
+          {{ confirmClearSupplier ? '确认清空？' : '清除供应商料号' }}
         </button>
         <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
       </template>

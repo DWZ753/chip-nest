@@ -54,7 +54,7 @@ async def lifespan(_app: FastAPI):
     await get_manager().stop()
 
 
-app = FastAPI(title="ChipNest", version="0.3.14", lifespan=lifespan)
+app = FastAPI(title="ChipNest", version="0.3.15", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

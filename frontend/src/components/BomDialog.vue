@@ -222,7 +222,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
               </div>
 
               <!-- ========== 工作区：粘贴文本 / xlsx 文件 ========== -->
-              <div v-if="view === 'work'" class="flex flex-col gap-3">
+              <div v-if="view === 'work'" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                 <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <textarea v-model="text" class="textarea mono !min-h-[96px] text-[12.5px]" spellcheck="false"
                             placeholder="粘贴 BOM 文本：每行一件，如 10k电阻 x20 / 100nF电容 0805 20个 / LED 5pcs；或直接选择下方的 .xlsx / .csv / .txt 文件" />
@@ -289,11 +289,12 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                 <!-- 规划结果 -->
                 <template v-if="plan">
                   <div v-if="plan.missing.length" class="fade-up rounded-xl px-4 py-3"
-                       style="border:1px solid rgba(217,178,62,.5); background: rgba(217,178,62,.08)">
+                       style="border:1px solid rgba(217,178,62,.5); background: var(--panel-strong)">
                     <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold" style="color: var(--warn)">
                       <PackageX :size="15" /> 库存不足，请先补货（{{ plan.missing.length }} 项）
                     </div>
-                    <div class="overflow-hidden rounded-lg" style="border: 1px solid var(--line)">
+                    <div class="overflow-hidden rounded-lg"
+                         style="border: 1px solid var(--line); background: var(--surface)">
                       <div class="grid grid-cols-[64px_1fr_72px_72px] gap-2 px-2.5 py-1 text-[10.5px] font-bold"
                            style="color: var(--text-faint); background: rgba(255,255,255,.03)">
                         <span>状态</span><span>物料</span>

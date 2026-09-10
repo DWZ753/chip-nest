@@ -24,8 +24,8 @@ const saving = ref(false)
 const msg = ref<string | null>(null)
 
 watch(
-  () => [props.open, form.zone_count] as const,
-  async ([v]) => {
+  () => props.open,
+  async (v) => {
     if (!v) return
     form.zone_count = bins.layout.zone_count
     form.layer_count = bins.layout.layer_count
@@ -43,6 +43,39 @@ watch(
     finally { loading.value = false }
   },
 )
+
+const confirmZone = ref(0)
+let zoneTimer: ReturnType<typeof setTimeout> | undefined
+
+// 区数变化：仅补齐/裁剪数组，不回读已保存布局（否则改数字会被弹回）
+watch(() => form.zone_count, (n) => {
+  const names = [...form.zone_names]
+  const sizes = [...form.zone_sizes]
+  while (names.length < n) names.push('')
+  while (sizes.length < n) sizes.push([form.row_count, form.col_count])
+  form.zone_names = names.slice(0, n)
+  form.zone_sizes = sizes.slice(0, n)
+})
+
+function addZone() {
+  if (form.zone_count >= 9) return
+  form.zone_count += 1
+}
+
+function removeZone(zone: number) {
+  if (form.zone_count <= 1) return
+  if (confirmZone.value !== zone) {
+    confirmZone.value = zone
+    window.clearTimeout(zoneTimer)
+    zoneTimer = window.setTimeout(() => { confirmZone.value = 0 }, 3500)
+    return
+  }
+  window.clearTimeout(zoneTimer)
+  form.zone_names.splice(zone - 1, 1)
+  form.zone_sizes.splice(zone - 1, 1)
+  form.zone_count -= 1
+  confirmZone.value = 0
+}
 
 async function saveLayout() {
   saving.value = true
@@ -108,21 +141,26 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                     货架网格
                     <span class="chip num ml-auto">{{ form.row_count * form.col_count }} 格/层</span>
                   </div>
-                  <div class="grid grid-cols-4 gap-2.5">
+                  <div class="grid grid-cols-3 gap-2.5">
                     <div v-for="f in [
-                      ['区数', 'zone_count'], ['层数', 'layer_count'],
-                      ['行数', 'row_count'], ['列数', 'col_count']] as const" :key="f[1]">
+                      ['层数（共用）', 'layer_count'],
+                      ['默认行数', 'row_count'], ['默认列数', 'col_count']] as const" :key="f[1]">
                       <label class="field-label">{{ f[0] }}</label>
                       <input v-model.number="form[f[1]]" class="input num text-center" type="number" min="1" />
                     </div>
                   </div>
-                  <div class="mt-3 flex flex-col gap-2">
-                    <div class="text-[11.5px] font-semibold" style="color: var(--text-faint)">
-                      默认尺寸用于新建的区：{{ form.row_count }} 行 × {{ form.col_count }} 列
-                    </div>
+                  <div class="mt-3 flex items-center gap-2">
+                    <span class="text-[12.5px] font-semibold">共 {{ form.zone_count }} 个区</span>
+                    <span class="text-[11.5px]" style="color: var(--text-faint)">
+                      新建区默认 {{ form.row_count }} 行 × {{ form.col_count }} 列
+                    </span>
+                    <button class="btn ml-auto !px-3 !py-1 text-xs" :disabled="form.zone_count >= 9"
+                            @click="addZone">＋ 新建区</button>
+                  </div>
+                  <div class="mt-2 flex flex-col gap-2">
                     <div v-for="z in form.zone_count" :key="z"
                          class="grid items-end gap-2"
-                         :style="{ gridTemplateColumns: 'minmax(0,1fr) 84px 84px' }">
+                         :style="{ gridTemplateColumns: 'minmax(0,1fr) 84px 84px 74px' }">
                       <div>
                         <label class="field-label">区{{ z }}名称</label>
                         <input v-model="form.zone_names[z - 1]" class="input !py-1.5 text-[13px]"
@@ -138,6 +176,11 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                         <input v-model.number="form.zone_sizes[z - 1][1]" class="input num !py-1.5 text-center"
                                type="number" min="1" max="50" />
                       </div>
+                      <button class="btn !px-2 !py-1.5 text-xs" :disabled="form.zone_count <= 1"
+                              :title="'删除第 ' + z + ' 区（区内元件会变成游离状态，可一键搬回）'"
+                              @click="removeZone(z)">
+                        {{ confirmZone === z ? '确认删除' : '删除' }}
+                      </button>
                     </div>
                   </div>
                   <div class="mt-3 flex items-center gap-2">
