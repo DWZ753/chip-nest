@@ -7,7 +7,7 @@ import { History, LayoutGrid, PackagePlus, Save, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { TransactionRow } from '../api/types'
-import { useBinsStore } from '../stores/bins'
+import { useBinsStore, zoneGrid } from '../stores/bins'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; manual: [] }>()
@@ -16,6 +16,7 @@ const bins = useBinsStore()
 const form = reactive({
   zone_count: 1, layer_count: 3, row_count: 1, col_count: 4,
   zone_names: [''] as string[],
+  zone_sizes: [[1, 4]] as number[][],
 })
 const transactions = ref<TransactionRow[]>([])
 const loading = ref(false)
@@ -23,8 +24,8 @@ const saving = ref(false)
 const msg = ref<string | null>(null)
 
 watch(
-  () => props.open,
-  async (v) => {
+  () => [props.open, form.zone_count] as const,
+  async ([v]) => {
     if (!v) return
     form.zone_count = bins.layout.zone_count
     form.layer_count = bins.layout.layer_count
@@ -32,6 +33,10 @@ watch(
     form.col_count = bins.layout.col_count
     form.zone_names = Array.from({ length: form.zone_count }, (_, i) =>
       (bins.layout.zone_names?.[i] ?? '').slice(0, 24))
+    form.zone_sizes = Array.from({ length: form.zone_count }, (_, i) => {
+      const [rows, cols] = zoneGrid(bins.layout, i + 1)
+      return [rows, cols]
+    })
     msg.value = null
     loading.value = true
     try { transactions.value = await api.listTransactions(30) }
@@ -45,10 +50,15 @@ async function saveLayout() {
   try {
     const names = Array.from({ length: form.zone_count }, (_, i) =>
       (form.zone_names[i] ?? '').trim().slice(0, 24))
+    const sizes = Array.from({ length: form.zone_count }, (_, i) => {
+      const item = form.zone_sizes[i] ?? [form.row_count, form.col_count]
+      return [Math.max(1, item[0] | 0), Math.max(1, item[1] | 0)]
+    })
     await api.putLayout({
       zone_count: form.zone_count, layer_count: form.layer_count,
       row_count: form.row_count, col_count: form.col_count,
       zone_names: names,
+      zone_sizes: sizes,
     })
     await bins.refreshAll()
     msg.value = '已保存'
@@ -106,12 +116,28 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                       <input v-model.number="form[f[1]]" class="input num text-center" type="number" min="1" />
                     </div>
                   </div>
-                  <div v-if="form.zone_count >= 1" class="mt-3 grid gap-2"
-                       :style="{ gridTemplateColumns: 'repeat(' + Math.min(form.zone_count, 3) + ', minmax(0,1fr))' }">
-                    <div v-for="z in form.zone_count" :key="z">
-                      <label class="field-label">区{{ z }}名称</label>
-                      <input v-model="form.zone_names[z - 1]" class="input !py-1.5 text-[13px]"
-                             maxlength="24" placeholder="留空则显示第 {{ z }} 区" />
+                  <div class="mt-3 flex flex-col gap-2">
+                    <div class="text-[11.5px] font-semibold" style="color: var(--text-faint)">
+                      默认尺寸用于新建的区：{{ form.row_count }} 行 × {{ form.col_count }} 列
+                    </div>
+                    <div v-for="z in form.zone_count" :key="z"
+                         class="grid items-end gap-2"
+                         :style="{ gridTemplateColumns: 'minmax(0,1fr) 84px 84px' }">
+                      <div>
+                        <label class="field-label">区{{ z }}名称</label>
+                        <input v-model="form.zone_names[z - 1]" class="input !py-1.5 text-[13px]"
+                               maxlength="24" placeholder="第 {{ z }} 区" />
+                      </div>
+                      <div>
+                        <label class="field-label">行</label>
+                        <input v-model.number="form.zone_sizes[z - 1][0]" class="input num !py-1.5 text-center"
+                               type="number" min="1" max="20" />
+                      </div>
+                      <div>
+                        <label class="field-label">列</label>
+                        <input v-model.number="form.zone_sizes[z - 1][1]" class="input num !py-1.5 text-center"
+                               type="number" min="1" max="50" />
+                      </div>
                     </div>
                   </div>
                   <div class="mt-3 flex items-center gap-2">

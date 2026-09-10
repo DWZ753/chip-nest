@@ -7,7 +7,7 @@ import { Minus, Pencil, Plus, Trash2, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig } from '../api/types'
-import { useBinsStore, type BinPosition } from '../stores/bins'
+import { useBinsStore, zoneGrid, type BinPosition } from '../stores/bins'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
@@ -91,19 +91,30 @@ watch(
   { immediate: true },
 )
 
+// 选项只用数字：列窄也能完整显示（区/层/格 表头已说明含义）
 const zoneOptions = computed<SelectOption[]>(() =>
   Array.from({ length: props.layout.zone_count }, (_, i) => ({
-    value: i + 1, label: `第 ${i + 1} 区`,
+    value: i + 1, label: String(i + 1),
   })))
 const layerOptions = computed<SelectOption[]>(() =>
   Array.from({ length: props.layout.layer_count }, (_, i) => ({
-    value: i + 1, label: `第 ${i + 1} 层`,
+    value: i + 1, label: String(i + 1),
   })))
 const slotOptions = computed<SelectOption[]>(() =>
   slots.value.map((s) => ({ value: s, label: String(s) })))
 
-const slots = computed(() =>
-  Array.from({ length: props.layout.row_count * props.layout.col_count }, (_, i) => i),
+// 格选项按“当前选中的区”的尺寸生成
+const slots = computed(() => {
+  const [rows, cols] = zoneGrid(props.layout, form.zone)
+  return Array.from({ length: rows * cols }, (_, i) => i)
+})
+
+watch(
+  () => form.zone,
+  () => {
+    const [rows, cols] = zoneGrid(props.layout, form.zone)
+    if (form.slot >= rows * cols) form.slot = 0
+  },
 )
 
 const urgency = computed(() => {
@@ -299,7 +310,7 @@ function close() {
                 </div>
 
                 <!-- 位置 + 阈值 -->
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-[2.4fr_1fr] gap-3">
                   <div class="grid grid-cols-3 gap-2">
                     <div>
                       <label class="field-label">区</label>

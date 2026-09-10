@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { Check, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
 
 import type { ComponentItem } from '../api/types'
-import { positionKey, useBinsStore, zoneName, type BinPosition } from '../stores/bins'
+import { positionKey, useBinsStore, zoneGrid, zoneName, type BinPosition } from '../stores/bins'
 import BinCard from './BinCard.vue'
 
 const emit = defineEmits<{
@@ -78,9 +78,14 @@ async function deleteSelected() {
 
 const bins = useBinsStore()
 
-const cellsPerLayer = computed(
-  () => bins.layout.row_count * bins.layout.col_count,
-)
+function zoneCells(zone: number): number {
+  const [rows, cols] = zoneGrid(bins.layout, zone)
+  return rows * cols
+}
+
+function zoneCols(zone: number): number {
+  return zoneGrid(bins.layout, zone)[1]
+}
 
 function compAt(pos: BinPosition): ComponentItem | undefined {
   return bins.compsByKey[positionKey(pos)]
@@ -164,8 +169,10 @@ async function fixOrphans() {
           </div>
         </div>
         <div class="mb-0.5 flex items-center gap-1.5">
-          <span class="chip mono !text-[10px]">共 {{ bins.layout.layer_count }} 层</span>
-          <span class="chip mono !text-[10px]">每层 {{ bins.layout.row_count }}×{{ bins.layout.col_count }} 格</span>
+          <span class="chip !text-[10.5px]">共 {{ bins.layout.layer_count }} 层</span>
+          <span class="chip !text-[10.5px] num">
+            每层 {{ zoneGrid(bins.layout, zone)[0] }}×{{ zoneGrid(bins.layout, zone)[1] }} 格
+          </span>
         </div>
       </div>
 
@@ -181,10 +188,10 @@ async function fixOrphans() {
           <div class="overflow-x-auto px-1 pt-2.5 pb-2">
           <div
             class="grid gap-2.5"
-            :style="{ gridTemplateColumns: 'repeat(' + bins.layout.col_count + ', minmax(118px, 1fr))' }"
+            :style="{ gridTemplateColumns: 'repeat(' + zoneCols(zone) + ', minmax(118px, 1fr))' }"
           >
             <template
-              v-for="slot in cellsPerLayer"
+              v-for="slot in zoneCells(zone)"
               :key="slot"
             >
               <!-- 有料格子 -->

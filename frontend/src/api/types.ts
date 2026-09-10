@@ -5,6 +5,7 @@ export interface LayoutConfig {
   row_count: number
   col_count: number
   zone_names: string[]
+  zone_sizes: number[][]
   updated_at: string
 }
 

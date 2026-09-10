@@ -274,7 +274,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                           :style="i % 2 ? 'background: rgba(255,255,255,.02)' : ''">
                         <td class="max-w-[300px] px-3 py-1.5">
                           <span class="font-bold">{{ line.name || line.raw }}</span>
-                          <span v-if="line.raw !== line.name" class="mono ml-2 text-[10.5px]" style="color: var(--text-faint)">
+                          <span v-if="line.raw !== line.name" class="ml-2 text-[11px]" style="color: var(--text-faint)">
                             {{ line.raw }}
                           </span>
                         </td>
@@ -293,27 +293,38 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                     <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold" style="color: var(--warn)">
                       <PackageX :size="15" /> 库存不足，请先补货（{{ plan.missing.length }} 项）
                     </div>
-                    <ul class="grid gap-1 text-[12.5px] sm:grid-cols-2">
-                      <li v-for="(m, i) in plan.missing" :key="i" class="flex flex-wrap items-center gap-x-2">
-                        <span class="chip !text-[9.5px]" style="color: var(--danger)">
+                    <div class="overflow-hidden rounded-lg" style="border: 1px solid var(--line)">
+                      <div class="grid grid-cols-[64px_1fr_72px_72px] gap-2 px-2.5 py-1 text-[10.5px] font-bold"
+                           style="color: var(--text-faint); background: rgba(255,255,255,.03)">
+                        <span>状态</span><span>物料</span>
+                        <span class="text-right">还差</span>
+                        <span class="text-right">现有</span>
+                      </div>
+                      <div v-for="(m, i) in plan.missing" :key="i"
+                           class="grid grid-cols-[64px_1fr_72px_72px] items-center gap-2 px-2.5 py-1.5 text-[12.5px]"
+                           :style="i ? 'border-top: 1px solid var(--line)' : ''">
+                        <span class="chip !px-1.5 !text-[10px]"
+                              :style="m.reason === 'shortage' ? 'color: var(--danger)' : 'color: var(--info)'">
                           {{ m.reason === 'shortage' ? '量不足' : '无库存' }}
                         </span>
-                        <span class="font-bold">{{ m.name || m.raw }}</span>
-                        <span v-if="m.value" class="mono">{{ m.value }}</span>
-                        <span v-if="m.package" class="mono">{{ m.package }}</span>
-                        <span class="num" style="color: var(--warn)">还差 {{ m.quantity }}</span>
-                        <span v-if="m.available !== null" class="text-[10px]" style="color: var(--text-faint)">
-                          （现有 {{ m.available }}）
+                        <span class="truncate font-bold">
+                          {{ m.name || m.raw }}
+                          <span v-if="m.value" class="ml-1.5 font-normal" style="color: var(--text-dim)">{{ m.value }}</span>
+                          <span v-if="m.package" class="ml-1.5 font-normal" style="color: var(--text-faint)">{{ m.package }}</span>
                         </span>
-                      </li>
-                    </ul>
+                        <span class="num text-right font-bold" style="color: var(--warn)">{{ m.quantity }}</span>
+                        <span class="num text-right" style="color: var(--text-dim)">
+                          {{ m.available !== null ? m.available : '—' }}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <div class="fade-up flex flex-col gap-1.5 rounded-xl px-4 py-3"
                        style="border: 1px solid var(--line-strong); background: var(--panel)">
-                    <div class="text-[12.5px] font-extrabold" style="color: var(--accent-ink)">规划路线（共 {{ plan.steps.length }} 步）</div>
+                    <div class="text-[12.5px] font-extrabold" style="color: var(--accent-ink)">取料顺序（共 {{ plan.steps.length }} 步）</div>
                     <div v-for="(step, i) in plan.steps" :key="step.component.id"
-                         class="flex items-center gap-2 rounded-lg px-2 py-1 text-[12.5px]"
-                         style="background: rgba(255,255,255,.03)">
+                         class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px]"
+                         :style="i ? 'border-top: 1px solid var(--line)' : ''">
                       <span class="chip num !text-[10px]" style="color: var(--accent)">
                         {{ String(i + 1).padStart(2, '0') }}
                       </span>

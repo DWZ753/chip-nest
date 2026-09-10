@@ -79,4 +79,6 @@ class LayoutConfig(Base):
     col_count: Mapped[int] = mapped_column(Integer, default=4)
     # 每区可自定义名称（JSON 数组，如 ["LimeRC遥控器","通用料"]）；空数组=用「第N区」
     zone_names: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    # 每区独立网格尺寸（JSON 数组，每项 [行, 列]，如 [[1,4],[2,3]]）；缺项用 row/col 默认值
+    zone_sizes: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

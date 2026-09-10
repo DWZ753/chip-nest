@@ -25,6 +25,8 @@ class LayoutOut(BaseModel):
     row_count: int
     col_count: int
     zone_names: list[str] = []
+    # 每区 [行, 列]；长度与 zone_count 对齐
+    zone_sizes: list[list[int]] = []
     updated_at: dt.datetime
 
 
@@ -35,6 +37,21 @@ class LayoutUpdate(BaseModel):
     col_count: int = Field(ge=1, le=50)
     # 每区自定义名称（数量与 zone_count 对齐，多余截断/不足留空=第N区）
     zone_names: list[str] = Field(default=[], max_length=9)
+    # 每区独立尺寸：[行, 列]，缺项沿用 row_count/col_count
+    zone_sizes: list[list[int]] = Field(default=[], max_length=9)
+
+    @field_validator("zone_sizes")
+    @classmethod
+    def _check_zone_sizes(cls, values):
+        cleaned = []
+        for item in values or []:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                raise ValueError("zone_sizes 每项必须是 [行, 列]")
+            rows, cols = int(item[0]), int(item[1])
+            if not 1 <= rows <= 20 or not 1 <= cols <= 50:
+                raise ValueError("每区行数 1-20、列数 1-50")
+            cleaned.append([rows, cols])
+        return cleaned
 
 
 # ---------- 元件 ----------

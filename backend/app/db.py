@@ -38,6 +38,7 @@ LEGACY_COLUMN_UPGRADES: dict[str, list[tuple[str, str]]] = {
     ],
     "layout_configs": [
         ("zone_names", "TEXT NOT NULL DEFAULT '[]'"),
+        ("zone_sizes", "TEXT NOT NULL DEFAULT '[]'"),
     ],
 }
 

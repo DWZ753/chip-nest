@@ -146,3 +146,28 @@ async def test_display_tags_roundtrip(client):
 
     resp = await client.patch(f"/api/v1/components/{comp['id']}", json={"display_tags": []})
     assert resp.status_code == 200 and resp.json()["display_tags"] == []
+
+async def test_per_zone_sizes_validation(client):
+    """每区独立尺寸：合法范围按区校验，非法尺寸 422。"""
+    resp = await client.put("/api/v1/layout", json={
+        "zone_count": 2, "layer_count": 1, "row_count": 1, "col_count": 4,
+        "zone_names": ["A区", "B区"], "zone_sizes": [[1, 4], [2, 3]],
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["zone_sizes"] == [[1, 4], [2, 3]]
+
+    ok = await client.post("/api/v1/components", json={
+        "name": "B区件", "zone": 2, "layer": 1, "slot": 5,
+    })
+    assert ok.status_code == 201
+
+    bad = await client.post("/api/v1/components", json={
+        "name": "越界件", "zone": 2, "layer": 1, "slot": 6,
+    })
+    assert bad.status_code == 400 and "2x3" in bad.json()["detail"]
+
+    invalid = await client.put("/api/v1/layout", json={
+        "zone_count": 1, "layer_count": 1, "row_count": 1, "col_count": 4,
+        "zone_sizes": [[0, 4]],
+    })
+    assert invalid.status_code == 422

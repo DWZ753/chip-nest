@@ -34,7 +34,8 @@
   --glass-blur: 18px;
   --f-display: 'SF Pro Display', 'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC',
     'Microsoft YaHei UI', system-ui, sans-serif;
-  --f-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'SF Mono', monospace;
+  --f-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'SF Mono',
+    'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', monospace;
   --glow-primary: 0 0 18px rgba(76, 195, 240, 0.28);
 }
 
