@@ -146,7 +146,8 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                       ['层数（共用）', 'layer_count'],
                       ['默认行数', 'row_count'], ['默认列数', 'col_count']] as const" :key="f[1]">
                       <label class="field-label">{{ f[0] }}</label>
-                      <input v-model.number="form[f[1]]" class="input num text-center" type="number" min="1" />
+                      <input v-model.number="form[f[1]]" class="input num text-center" type="number" min="1"
+                             :max="f[1] === 'layer_count' ? 20 : f[1] === 'row_count' ? 20 : 50" />
                     </div>
                   </div>
                   <div class="mt-3 flex items-center gap-2">

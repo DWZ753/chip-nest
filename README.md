@@ -3,7 +3,19 @@
 面向电子工程师的桌面元件仓库工具：用卡片网格管理你的元件库，支持模糊搜索、BOM 导入与引导取料，
 可接 ESP32 + NeoPixel 灯带做槽位指示。Windows 安装包即装即用，无需 Python。
 
-![界面预览](frontend/preview-tech-dark.png)
+## 界面预览
+
+主界面（深色主题，多区与元件卡片）：
+
+![主界面](docs/screenshot-main.png)
+
+BOM 导入与取料规划：
+
+![BOM 导入](docs/screenshot-bom.png)
+
+引导取料（灯带顺序逐格高亮）：
+
+![引导取料](docs/screenshot-guide.png)
 
 ## 功能
 

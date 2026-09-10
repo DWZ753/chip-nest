@@ -103,9 +103,11 @@ async function clearSupplierParts() {
   }
   window.clearTimeout(clearTimer)
   for (const id of selectedIds.value) {
-    await api.patchComponent(id, { supplier_part: '' })
+    const updated = await api.patchComponent(id, { supplier_part: '' })
+    bins.upsert(updated)          // 立即更新本地状态
   }
   confirmClearSupplier.value = false
+  await bins.refreshAll()         // 再与后端对齐一次
   exitBatch()
 }
 
@@ -117,10 +119,14 @@ async function deleteSelected() {
     return
   }
   window.clearTimeout(confirmTimer)
-  for (const id of selectedIds.value) {
-    await bins.removeComponent(id)
+  try {
+    for (const id of selectedIds.value) {
+      await bins.removeComponent(id)
+    }
+  } finally {
+    await bins.refreshAll().catch(() => undefined)
+    exitBatch()
   }
-  exitBatch()
 }
 
 const bins = useBinsStore()

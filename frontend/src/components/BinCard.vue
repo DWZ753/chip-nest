@@ -48,22 +48,24 @@ const title = computed(() =>
     @click="emit('click', comp)"
     @keydown.enter="emit('click', comp)"
   >
-    <!-- 名称独占一行（多选时隐藏灯号/数量，选中勾在右上角） -->
-    <div class="flex items-center gap-1.5">
+    <!-- 名称最多两行（不悬停也尽量显示全）；灯号/数量悬停时才出现，不占名称宽度 -->
+    <div class="flex items-start gap-1.5">
       <span
-        class="card-title min-w-0 flex-1 truncate text-[13.5px] font-bold leading-snug"
+        class="card-title card-name min-w-0 flex-1 text-[13px] font-bold leading-snug"
         :title="comp.name"
       >{{ comp.name }}</span>
-      <span
-        v-if="comp.led_index !== null && !selectable"
-        class="chip chip-led flex-shrink-0 !px-1.5 !text-[9.5px]"
-        title="灯带序号"
-      >LED{{ comp.led_index }}</span>
-      <span
-        v-if="!selectable"
-        class="qty-hover chip qty-chip num flex-shrink-0 !px-1.5 !text-[10px]"
-        title="当前库存"
-      >× {{ comp.quantity }}</span>
+      <span class="hover-meta flex flex-shrink-0 items-center gap-1">
+        <span
+          v-if="comp.led_index !== null && !selectable"
+          class="chip chip-led !px-1.5 !text-[9.5px]"
+          title="灯带序号"
+        >LED{{ comp.led_index }}</span>
+        <span
+          v-if="!selectable"
+          class="chip qty-chip num !px-1.5 !text-[10px]"
+          title="当前库存"
+        >× {{ comp.quantity }}</span>
+      </span>
     </div>
 
     <div class="meta-row mt-1 flex flex-wrap items-center gap-1">
