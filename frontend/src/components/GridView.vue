@@ -30,6 +30,34 @@ function exitBatch() {
   window.clearTimeout(confirmTimer)
 }
 
+function compsInZone(zone: number): ComponentItem[] {
+  return bins.components.filter((c) => c.zone === zone)
+}
+
+function zoneFullySelected(zone: number): boolean {
+  const list = compsInZone(zone)
+  return list.length > 0 && list.every((c) => selectedIds.value.has(c.id))
+}
+
+function selectZone(zone: number) {
+  const next = new Set(selectedIds.value)
+  const list = compsInZone(zone)
+  if (zoneFullySelected(zone)) {
+    for (const c of list) next.delete(c.id)
+  } else {
+    for (const c of list) next.add(c.id)
+  }
+  selectedIds.value = next
+}
+
+function selectAll() {
+  selectedIds.value = new Set(bins.components.map((c) => c.id))
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
 function toggleSelect(comp: ComponentItem) {
   const next = new Set(selectedIds.value)
   if (next.has(comp.id)) next.delete(comp.id)
@@ -127,11 +155,13 @@ async function fixOrphans() {
     <div class="flex items-center justify-end gap-2">
       <template v-if="batchMode">
         <span class="chip num">已选 {{ selectedIds.size }} 个</span>
-        <button class="btn btn-danger !py-1.5 text-xs" @click="deleteSelected">
+        <button class="btn !py-1.5 text-xs" @click="selectAll">全选</button>
+        <button class="btn !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="clearSelection">清空选择</button>
+        <button class="btn btn-danger !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="deleteSelected">
           <Trash2 :size="13" /> {{ confirmDelete ? '确认删除？' : '删除所选' }}
         </button>
-        <button class="btn !py-1.5 text-xs" title="清空所选元件的供应商料号（工程专用编号）"
-                @click="clearSupplierParts">
+        <button class="btn !py-1.5 text-xs" :disabled="selectedIds.size === 0"
+                title="清空所选元件的供应商料号（工程专用编号）" @click="clearSupplierParts">
           {{ confirmClearSupplier ? '确认清空？' : '清除供应商料号' }}
         </button>
         <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
@@ -192,6 +222,10 @@ async function fixOrphans() {
           </div>
         </div>
         <div class="mb-0.5 flex items-center gap-1.5">
+          <button v-if="batchMode" class="btn !px-2.5 !py-1 text-[11px]"
+                  @click="selectZone(zone)">
+            {{ zoneFullySelected(zone) ? '取消本区' : '选本区' }}
+          </button>
           <span class="chip !text-[10.5px]">共 {{ bins.layout.layer_count }} 层</span>
           <span class="chip !text-[10.5px] num">
             每层 {{ zoneGrid(bins.layout, zone)[0] }}×{{ zoneGrid(bins.layout, zone)[1] }} 格
@@ -225,6 +259,7 @@ async function fixOrphans() {
                 :guide="bins.guideKey === positionKey({ zone, layer, slot: slot - 1 })"
                 :selectable="batchMode"
                 :selected="batchMode && selectedIds.has(compAt({ zone, layer, slot: slot - 1 })!.id)"
+                :show-supplier="batchMode"
                 @click="onCard($event)"
               />
               <!-- 空位：虚线占位卡，点击新建 -->

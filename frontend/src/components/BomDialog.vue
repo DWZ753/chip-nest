@@ -391,9 +391,6 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                 </div>
 
                 <div class="flex items-center gap-2">
-                  <span class="text-[11px]" style="color: var(--text-faint)">
-                    每行独立选格（默认顺序填空位）；数量按 BOM 原值建档，阈值默认 5
-                  </span>
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="emit('close')">关闭</button>
                   <button class="btn btn-primary" :disabled="busy" @click="importAll">

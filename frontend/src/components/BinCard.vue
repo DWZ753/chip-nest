@@ -9,6 +9,7 @@ const props = defineProps<{
   guide: boolean
   selectable?: boolean
   selected?: boolean
+  showSupplier?: boolean
 }>()
 
 const emit = defineEmits<{ click: [ComponentItem] }>()
@@ -39,7 +40,8 @@ const title = computed(() =>
   <div
     class="bin-card group"
     :class="{ 'search-hit': flashing, 'guide-now': guide,
-              'card-selected': selected }"
+              'card-selected': selected,
+              'has-supplier': showSupplier && !!comp.supplier_part }"
     :title="title"
     role="button"
     tabindex="0"
@@ -100,6 +102,12 @@ const title = computed(() =>
     <div class="band-track -mx-3 mt-2">
       <div class="band" :class="bandCls" :style="{ width: bandWidth }" />
     </div>
+    <!-- 多选时临时把供应商料号显示在格子中间（便于清理工程专用编号） -->
+    <div v-if="showSupplier && comp.supplier_part" class="supplier-overlay"
+         :title="'供应商料号 ' + comp.supplier_part">
+      {{ comp.supplier_part }}
+    </div>
+
     <!-- 搜索命中的辉光层（线性淡出） -->
     <div v-if="flashing" class="flash-layer" />
   </div>

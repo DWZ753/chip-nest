@@ -12,7 +12,7 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const connection = useConnectionStore()
 const { dark, setLight, fontScale, setFontScale, FONT_STEPS } = useTheme()
-const SCALE_LABELS = ['小', '默认', '大', '特大']
+const SCALE_LABELS = ['小', '中', '大', '特大']
 
 const MODE_TEXT = {
   serial: '串口模式',
