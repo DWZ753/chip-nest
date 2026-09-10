@@ -130,6 +130,12 @@ function fail(e: unknown) {
   errorMsg.value = e instanceof Error ? e.message : String(e)
 }
 
+// 标签被删除时，展示位同步剔除（避免“标签没了但格子上还挂着”）
+watch(tags, (list) => {
+  const kept = displayTags.value.filter((t) => list.includes(t))
+  if (kept.length !== displayTags.value.length) displayTags.value = kept
+})
+
 function toggleDisplay(tag: string) {
   if (displayTags.value.includes(tag)) {
     displayTags.value = displayTags.value.filter((t) => t !== tag)
@@ -152,7 +158,7 @@ async function save() {
         manufacturer_part: form.manufacturer_part.trim() || null,
         supplier_part: form.supplier_part.trim() || null,
         tags: [...tags.value],
-        display_tags: [...displayTags.value],
+        display_tags: displayTags.value.filter((t) => tags.value.includes(t)),
         quantity: Math.max(0, initQty.value | 0),
         threshold: Math.max(0, form.threshold | 0),
         zone: form.zone, layer: form.layer, slot: form.slot,
@@ -168,7 +174,7 @@ async function save() {
       manufacturer_part: form.manufacturer_part.trim() || null,
       supplier_part: form.supplier_part.trim() || null,
       tags: [...tags.value],
-      display_tags: [...displayTags.value],
+      display_tags: displayTags.value.filter((t) => tags.value.includes(t)),
       threshold: Math.max(0, form.threshold | 0),
     }
     const moved = form.zone !== props.comp!.zone || form.layer !== props.comp!.layer

@@ -24,6 +24,13 @@ def _load_tags(raw: str) -> list[str]:
     return [str(x) for x in parsed] if isinstance(parsed, list) else []
 
 
+def _dump_display_tags(tags, display, cap: int = 3) -> str:
+    """展示标签必须是标签的子集：标签被删掉后，展示位同步清理。"""
+    tag_set = [str(t).strip()[:20] for t in (tags or [])]
+    keep = [str(d).strip()[:20] for d in (display or []) if str(d).strip()[:20] in tag_set]
+    return _dump_tags(keep, cap=cap)
+
+
 def _dump_tags(tags, cap: int = 8) -> str:
     """标签列表 → 存储 JSON（容错任意输入；cap 限制条数）。"""
     if not tags:
@@ -146,7 +153,7 @@ async def create_component(
         manufacturer_part=manufacturer_part,
         supplier_part=supplier_part,
         tags=_dump_tags(tags),
-        display_tags=_dump_tags(display_tags, cap=3),
+        display_tags=_dump_display_tags(tags, display_tags),
         search_text=build_search_text(name, value or "", package or "",
                                       manufacturer_part or "", " ".join(tags or [])),
     )
@@ -182,8 +189,16 @@ async def update_component(
         component.tags = _dump_tags(patch["tags"] or [])
         changed.append("tags")
     if "display_tags" in patch:
-        component.display_tags = _dump_tags(patch["display_tags"] or [], cap=3)
+        component.display_tags = _dump_display_tags(
+            patch.get("tags", _load_tags(component.tags)),
+            patch["display_tags"],
+        )
         changed.append("display_tags")
+    elif "tags" in patch:
+        # 只改了标签：展示标签里已不存在的项同步移除
+        component.display_tags = _dump_display_tags(
+            patch["tags"], _load_tags(component.display_tags)
+        )
 
     if changed:  # 名称/值/封装变动时重建检索文本
         component.search_text = build_search_text(

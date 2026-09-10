@@ -308,7 +308,8 @@ html.light .bin-card {
   overflow: hidden;
   word-break: break-word;
 }
-.bin-card .meta-side { opacity: 1; }
+.bin-card .meta-side { opacity: 0; transition: opacity 0.18s ease; }
+.bin-card:hover .meta-side { opacity: 1; }
 /* 头行数量小胶囊（随行布局，绝不与名称重叠） */
 .qty-chip {
   background: var(--accent-dim);

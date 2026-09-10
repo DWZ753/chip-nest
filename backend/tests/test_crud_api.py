@@ -171,3 +171,14 @@ async def test_per_zone_sizes_validation(client):
         "zone_sizes": [[0, 4]],
     })
     assert invalid.status_code == 422
+
+async def test_display_tags_follow_removed_tags(client):
+    """展示标签必须是标签子集：非子集自动剔除；删标签后展示位同步清理。"""
+    comp = await _create(client, slot=0, name="主控", value=None,
+                         tags=["主控", "常用"], display_tags=["主控", "幽灵"])
+    assert comp["display_tags"] == ["主控"]  # 幽灵不在 tags 里，被剔除
+
+    resp = await client.patch(f"/api/v1/components/{comp['id']}",
+                              json={"tags": ["常用"]})
+    assert resp.status_code == 200
+    assert resp.json()["display_tags"] == []  # 主控 已被删除
