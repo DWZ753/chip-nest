@@ -48,13 +48,13 @@ const title = computed(() =>
     @click="emit('click', comp)"
     @keydown.enter="emit('click', comp)"
   >
-    <!-- 名称最多两行（不悬停也尽量显示全）；灯号/数量悬停时才出现，不占名称宽度 -->
+    <!-- 名称最多两行；灯号/数量常驻右侧（预留位置，悬停不再跳动） -->
     <div class="flex items-start gap-1.5">
       <span
         class="card-title card-name min-w-0 flex-1 text-[13px] font-bold leading-snug"
         :title="comp.name"
       >{{ comp.name }}</span>
-      <span class="hover-meta flex flex-shrink-0 items-center gap-1">
+      <span class="meta-side flex flex-shrink-0 items-center gap-1">
         <span
           v-if="comp.led_index !== null && !selectable"
           class="chip chip-led !px-1.5 !text-[9.5px]"

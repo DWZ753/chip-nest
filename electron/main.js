@@ -161,7 +161,7 @@ async function createWindow() {
       console.log('[chipnest-smoke] probe =', JSON.stringify(probe),
                   '| ui-marker =', marker);
       const apiOk = probe[0] === 200 && probe[1] === 200 && probe[2] === 200;
-      if (apiOk && marker && String(probe[3]).startsWith('0.3')) {
+      if (apiOk && marker && String(probe[3]) === app.getVersion()) {
         console.log('[chipnest-smoke] 版本', probe[3], '· UI 标记存在 · 冒烟通过');
         setTimeout(() => app.quit(), 600);
       } else {

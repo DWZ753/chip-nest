@@ -114,7 +114,7 @@ chip-nest/
 - PyInstaller onefile → backend/dist/chipnest-backend.exe（约 25MB；--collect-all pypinyin + --collect-submodules uvicorn +
   --hidden-import aiosqlite/greenlet/websockets）。独立运行实测：health、中文建档、拼音检索 dz、0603、bom/plan、system/status 全通。
 - electron-builder：extraResources 收 backend/chipnest-backend.exe 与 frontend_dist（frontend/dist）；--win --dir 的 win-unpacked
-  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-0.3.16.exe（约 130MB）。
+  以 CHIPNEST_SMOKE=1 实测通过（免 Python 后端自起、页面加载成功、退出清理）；--win nsis 出 electron/release/ChipNest-Setup-1.0.0.exe（约 130MB）。
 - 注意：安装包**未代码签名**（SmartScreen 提示属预期）；nsis 为交互式向导（oneClick:false，无人值守 /S 不适用，需人工下一步）。
 
 ### V0.3.0 迭代（专业性与可用性 ✅，同日完成）
@@ -134,6 +134,11 @@ chip-nest/
   q=CL05/104KB 检索全通；vue-tsc + vite build 零错误；DOM 冒烟显示区名与 MPN；
   win-unpacked CHIPNEST_SMOKE=1 页面加载成功。产物 v0.3.0。
 
+### V1.0.0 正式版（候选，待用户目测后推送）
+- 版本口径统一：正式版从 0.3.x 直接定为 1.0.0（0.x 为开发迭代）；三处版本号同步
+  （FastAPI app.version / electron package.json），冒烟改为严格比对 app.getVersion()。
+- 卡片：名称最多两行；灯号与数量胶囊常驻右侧预留位置，悬停不再引起布局跳动。
+- 待办：用户目测通过 → 补充 docs/screenshot-{main,bom,guide}.png → git tag v1.0.0 并推送。
 ### V0.3.16 多选增强 + 文案清理 ✅
 - 删除购买清单底部注释式说明（“每行独立选格…”）。
 - 字号档位标签：默认 → 中（小/中/大/特大）。
@@ -275,7 +280,7 @@ chip-nest/
   vue-tsc + vite build 零错误；headless DOM 冒烟确认 ZONE 标签/元件卡/MOCK 胶囊渲染；
   新 UI 截图存 `frontend/preview-tech-dark.png`（视觉 API 限流未人工复核，请目测）。
 - 产物重建为 **v0.2.0**：backend/dist/chipnest-backend.exe + electron/release/
-  ChipNest-Setup-0.3.16.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
+  ChipNest-Setup-1.0.0.exe（~137MB），win-unpacked CHIPNEST_SMOKE=1 实测页面加载成功。
 
 ## 4. 完成状态与收尾清单（M1–M7 + 打包 ✅，2026-09-08）
 
@@ -286,7 +291,7 @@ chip-nest/
 - M5 ✅ 前端骨架 + 设计系统（§3）
 - M6 ✅ 核心视图与动效（§3）
 - M7 ✅ Electron 壳 + ESP32 固件 + 打包配置（§3）
-- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-0.3.16.exe（重建命令见 README「打包」）
+- ✅ 免 Python 打包：backend/dist/chipnest-backend.exe + electron/release/ChipNest-Setup-1.0.0.exe（重建命令见 README「打包」）
 
 ### 收尾清单（剩余为可选增强/需人工）
 - ⏳ 安装包 UI 走查：NSIS 向导/快捷方式/卸载（无人值守只验证到 win-unpacked 冒烟）。

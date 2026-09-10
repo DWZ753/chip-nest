@@ -300,7 +300,7 @@ html.light .bin-card {
   box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.8), var(--glow-primary);
 }
 .bin-card:hover::before { opacity: 0.9; }
-/* 名称默认最多两行；悬停时才显示灯号与数量（不占名称宽度） */
+/* 名称默认最多两行；灯号/数量常驻右侧占位，避免悬停时布局跳动 */
 .bin-card .card-name {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -308,8 +308,7 @@ html.light .bin-card {
   overflow: hidden;
   word-break: break-word;
 }
-.bin-card .hover-meta { display: none; }
-.bin-card:hover .hover-meta { display: flex; }
+.bin-card .meta-side { opacity: 1; }
 /* 头行数量小胶囊（随行布局，绝不与名称重叠） */
 .qty-chip {
   background: var(--accent-dim);
