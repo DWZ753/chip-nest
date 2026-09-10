@@ -611,3 +611,17 @@ html.light .bin-card.has-supplier {
 .tag-drop-target {
   box-shadow: -2px 0 0 0 var(--accent);
 }
+/* 卡片上的料号 chip */
+.chip-mpn {
+  background: color-mix(in srgb, var(--info) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--info) 38%, var(--line-strong));
+  color: color-mix(in srgb, var(--info) 80%, var(--text-dim));
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip-supplier {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 38%, var(--line-strong));
+  color: color-mix(in srgb, var(--success) 80%, var(--text-dim));
+}

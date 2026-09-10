@@ -31,6 +31,9 @@ const bandWidth = computed(() => {
   return Math.min(100, Math.round((q / t) * 100)) + '%'
 })
 
+const fields = computed<string[]>(() => props.comp.display_fields ?? ['value', 'package'])
+const show = (name: string) => fields.value.includes(name)
+
 const title = computed(() =>
   [props.comp.name, props.comp.value, props.comp.package].filter(Boolean).join(' · '),
 )
@@ -70,14 +73,24 @@ const title = computed(() =>
 
     <div class="meta-row mt-1 flex flex-wrap items-center gap-1">
       <span
-        v-if="comp.value"
+        v-if="show('value') && comp.value"
         class="chip chip-value mono !px-2"
         style="background: color-mix(in srgb, var(--accent) 14%, var(--panel))"
       >{{ comp.value }}</span>
       <span
-        v-if="comp.package"
+        v-if="show('package') && comp.package"
         class="chip chip-pkg mono"
       >{{ comp.package }}</span>
+      <span
+        v-if="show('mpn') && comp.manufacturer_part"
+        class="chip chip-mpn mono !px-1.5 !text-[9.5px]"
+        :title="'厂商料号 ' + comp.manufacturer_part"
+      >{{ comp.manufacturer_part }}</span>
+      <span
+        v-if="show('supplier') && comp.supplier_part"
+        class="chip chip-supplier mono !px-1.5 !text-[9.5px]"
+        :title="'供应商料号 ' + comp.supplier_part"
+      >{{ comp.supplier_part }}</span>
     </div>
 
     <!-- 展示标签：卡片中部空白区独立成行，任何宽度都显示 -->
@@ -91,14 +104,6 @@ const title = computed(() =>
             class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
             :title="(comp.display_tags ?? []).join('、')">+{{ comp.display_tags.length - 2 }}</span>
     </div>
-
-    <!-- 厂商料号（MPN）：采购/识别关键字段，窄格自动隐藏 -->
-    <div
-      v-if="comp.manufacturer_part"
-      class="mpn-line mono mt-0.5 truncate text-[9.5px]"
-      style="color: var(--text-faint)"
-      :title="comp.manufacturer_part"
-    >{{ comp.manufacturer_part }}</div>
 
     <div class="flex-1" />
     <div class="band-track -mx-3 mt-2">

@@ -7,6 +7,16 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+_CARD_FIELDS = ("value", "package", "mpn", "supplier")
+
+
+def _clean_fields(values: list) -> list[str]:
+    """卡片显示字段白名单（value/package/mpn/supplier），默认 value+package。"""
+    chosen = {str(v).strip() for v in (values or [])}
+    kept = [f for f in _CARD_FIELDS if f in chosen]
+    return kept or ["value", "package"]
+
+
 def _clean_tags_list(values: list, cap: int = 8) -> list[str]:
     """标签清洗：去空白、去重、截断，最多 cap 个、每个 ≤20 字符。"""
     seen: list[str] = []
@@ -73,6 +83,12 @@ class ComponentCreate(BaseModel):
     tags: list[str] = Field(default=[], max_length=8)
     # 外部可见标签：≤3 个，通常取 tags 的子集
     display_tags: list[str] = Field(default=[], max_length=3)
+    display_fields: list[str] = Field(default=["value", "package"], max_length=4)
+
+    @field_validator("display_fields")
+    @classmethod
+    def _check_display_fields(cls, values):
+        return _clean_fields(values)
 
     @field_validator("tags")
     @classmethod
@@ -98,6 +114,12 @@ class ComponentUpdate(BaseModel):
     supplier_part: Optional[str] = Field(default=None, max_length=40)
     tags: Optional[list[str]] = Field(default=None, max_length=8)
     display_tags: Optional[list[str]] = Field(default=None, max_length=3)
+    display_fields: Optional[list[str]] = Field(default=None, max_length=4)
+
+    @field_validator("display_fields")
+    @classmethod
+    def _check_display_fields(cls, values):
+        return None if values is None else _clean_fields(values)
 
     @field_validator("tags")
     @classmethod
@@ -144,8 +166,9 @@ class ComponentOut(BaseModel):
     supplier_part: Optional[str] = None
     tags: list[str] = []
     display_tags: list[str] = []
+    display_fields: list[str] = ["value", "package"]
 
-    @field_validator("tags", "display_tags", mode="before")
+    @field_validator("tags", "display_tags", "display_fields", mode="before")
     @classmethod
     def _parse_tags(cls, value):
         """ORM 层存的是 JSON 文本，转回列表。"""

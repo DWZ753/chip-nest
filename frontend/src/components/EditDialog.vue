@@ -36,6 +36,21 @@ const form = reactive({
   slot: 0,
 })
 const tags = ref<string[]>([])
+const displayFields = ref<string[]>(['value', 'package'])
+const FIELD_LABELS: Record<string, string> = {
+  value: '标称值',
+  package: '封装',
+  mpn: '厂商料号',
+  supplier: '供应商料号',
+}
+const FIELD_KEYS = ['value', 'package', 'mpn', 'supplier']
+
+function toggleField(key: string) {
+  const next = displayFields.value.includes(key)
+    ? displayFields.value.filter((f) => f !== key)
+    : [...displayFields.value, key]
+  displayFields.value = FIELD_KEYS.filter((f) => next.includes(f))
+}
 const displayTags = ref<string[]>([])
 const tagSuggestions = computed(() => {
   const used = new Set(tags.value)
@@ -66,6 +81,7 @@ watch(
       form.supplier_part = props.comp.supplier_part ?? ''
       tags.value = [...(props.comp.tags ?? [])]
       displayTags.value = [...(props.comp.display_tags ?? [])]
+      displayFields.value = [...(props.comp.display_fields ?? ['value', 'package'])]
       form.threshold = props.comp.threshold
       form.zone = props.comp.zone
       form.layer = props.comp.layer
@@ -80,6 +96,7 @@ watch(
       form.supplier_part = ''
       tags.value = []
       displayTags.value = []
+      displayFields.value = ['value', 'package']
       form.threshold = 5
       form.zone = p.zone
       form.layer = p.layer
@@ -159,6 +176,7 @@ async function save() {
         supplier_part: form.supplier_part.trim() || null,
         tags: [...tags.value],
         display_tags: tags.value.filter((t) => displayTags.value.includes(t)),
+        display_fields: [...displayFields.value],
         quantity: Math.max(0, initQty.value | 0),
         threshold: Math.max(0, form.threshold | 0),
         zone: form.zone, layer: form.layer, slot: form.slot,
@@ -175,6 +193,7 @@ async function save() {
       supplier_part: form.supplier_part.trim() || null,
       tags: [...tags.value],
       display_tags: tags.value.filter((t) => displayTags.value.includes(t)),
+      display_fields: [...displayFields.value],
       threshold: Math.max(0, form.threshold | 0),
     }
     const moved = form.zone !== props.comp!.zone || form.layer !== props.comp!.layer
@@ -311,6 +330,20 @@ function close() {
                               : ''"
                             @click="toggleDisplay(tag)">
                       {{ displayTags.includes(tag) ? '✓ ' : '' }}{{ tag }}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="field-label">卡片显示</label>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button v-for="key in FIELD_KEYS" :key="key" type="button"
+                            class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
+                            :class="displayFields.includes(key) ? '' : 'opacity-45 hover:opacity-80'"
+                            :style="displayFields.includes(key)
+                              ? 'color: var(--accent); border-color: var(--accent)' : ''"
+                            @click="toggleField(key)">
+                      {{ displayFields.includes(key) ? '✓ ' : '' }}{{ FIELD_LABELS[key] }}
                     </button>
                   </div>
                 </div>

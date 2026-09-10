@@ -69,6 +69,7 @@ async def create_component(
             supplier_part=body.supplier_part,
             tags=body.tags,
             display_tags=body.display_tags,
+            display_fields=body.display_fields,
         )
     except IntegrityError:
         raise HTTPException(status_code=409, detail="槽位已被占用（并发写入）")

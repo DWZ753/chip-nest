@@ -40,6 +40,11 @@ class Component(Base):
     tags: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     # 外部可见标签：从 tags 中挑选 1~3 个，显示在格子上（与元件名一起）
     display_tags: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    # 卡片上显示哪些字段：value/package/mpn/supplier 的子集（默认前两项）
+    display_fields: Mapped[str] = mapped_column(
+        Text, default='["value", "package"]',
+        server_default='["value", "package"]',
+    )
     quantity: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     threshold: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
     zone: Mapped[int] = mapped_column(Integer)

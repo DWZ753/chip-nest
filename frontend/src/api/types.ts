@@ -24,6 +24,7 @@ export interface ComponentItem {
   supplier_part: string | null
   tags: string[]
   display_tags: string[]
+  display_fields: string[]
 }
 
 export interface TransactionRow {

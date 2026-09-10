@@ -35,6 +35,7 @@ LEGACY_COLUMN_UPGRADES: dict[str, list[tuple[str, str]]] = {
         ("supplier_part", "VARCHAR(40)"),
         ("tags", "TEXT NOT NULL DEFAULT '[]'"),
         ("display_tags", "TEXT NOT NULL DEFAULT '[]'"),
+        ("display_fields", "TEXT NOT NULL DEFAULT '[\"value\", \"package\"]'"),
     ],
     "layout_configs": [
         ("zone_names", "TEXT NOT NULL DEFAULT '[]'"),

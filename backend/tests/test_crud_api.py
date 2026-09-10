@@ -182,3 +182,19 @@ async def test_display_tags_follow_removed_tags(client):
                               json={"tags": ["常用"]})
     assert resp.status_code == 200
     assert resp.json()["display_tags"] == []  # 主控 已被删除
+
+async def test_display_fields_whitelist(client):
+    """卡片显示字段：白名单过滤、默认值、改回读。"""
+    comp = await _create(client, slot=0, name="电容", value="100nF",
+                         package="0402", display_fields=["value", "mpn", "不存在"])
+    assert comp["display_fields"] == ["value", "mpn"]
+
+    resp = await client.patch(f"/api/v1/components/{comp['id']}",
+                              json={"display_fields": ["supplier", "package"]})
+    assert resp.status_code == 200
+    assert resp.json()["display_fields"] == ["package", "supplier"]
+
+    # 空列表回落默认
+    resp = await client.patch(f"/api/v1/components/{comp['id']}", json={"display_fields": []})
+    assert resp.status_code == 200
+    assert resp.json()["display_fields"] == ["value", "package"]

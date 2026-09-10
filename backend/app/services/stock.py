@@ -24,6 +24,16 @@ def _load_tags(raw: str) -> list[str]:
     return [str(x) for x in parsed] if isinstance(parsed, list) else []
 
 
+_CARD_FIELDS = ("value", "package", "mpn", "supplier")
+
+
+def _dump_fields(fields) -> str:
+    """卡片显示字段 → JSON（白名单，空则回默认 value+package）。"""
+    chosen = {str(f).strip() for f in (fields or [])}
+    kept = [f for f in _CARD_FIELDS if f in chosen]
+    return json.dumps(kept or ["value", "package"])
+
+
 def _dump_display_tags(tags, display, cap: int = 3) -> str:
     """展示标签必须是标签的子集：标签被删掉后，展示位同步清理。"""
     tag_set = [str(t).strip()[:20] for t in (tags or [])]
@@ -138,6 +148,7 @@ async def create_component(
     supplier_part: str | None = None,
     tags: list[str] | None = None,
     display_tags: list[str] | None = None,
+    display_fields: list[str] | None = None,
     source: str = "ui",
 ) -> Component:
     """建档（含检索文本与审计流水），同一事务提交。"""
@@ -154,6 +165,7 @@ async def create_component(
         supplier_part=supplier_part,
         tags=_dump_tags(tags),
         display_tags=_dump_display_tags(tags, display_tags),
+        display_fields=_dump_fields(display_fields),
         search_text=build_search_text(name, value or "", package or "",
                                       manufacturer_part or "", " ".join(tags or [])),
     )
@@ -199,6 +211,9 @@ async def update_component(
         component.display_tags = _dump_display_tags(
             patch["tags"], _load_tags(component.display_tags)
         )
+    if "display_fields" in patch:
+        component.display_fields = _dump_fields(patch["display_fields"])
+        changed.append("display_fields")
 
     if changed:  # 名称/值/封装变动时重建检索文本
         component.search_text = build_search_text(
