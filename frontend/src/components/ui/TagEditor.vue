@@ -5,12 +5,16 @@ import { Plus, X } from '@lucide/vue'
 // 多标签输入 + 跟手悬浮拖拽排序（Pointer Events 实现，不依赖 HTML5 drag 的默认幽灵图）
 const props = withDefaults(defineProps<{
   modelValue: string[]
+  shown?: string[]
   suggestions?: string[]
   placeholder?: string
   compact?: boolean
-}>(), { suggestions: () => [], placeholder: '输入后回车添加', compact: false })
+}>(), { shown: () => [], suggestions: () => [], placeholder: '输入后回车添加', compact: false })
 
-const emit = defineEmits<{ (e: 'update:modelValue', value: string[]): void }>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: string[]): void
+  (e: 'update:shown', value: string[]): void
+}>()
 const draft = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 const listEl = ref<HTMLElement | null>(null)
@@ -22,7 +26,17 @@ const chips = computed({
 })
 
 // ---------- 拖拽状态 ----------
-interface DragState { from: number; label: string; dx: number; dy: number; w: number; x: number; y: number }
+interface DragState {
+  from: number
+  label: string
+  dx: number
+  dy: number
+  w: number
+  x: number
+  y: number
+  startLeft: number
+  startTop: number
+}
 const drag = ref<DragState | null>(null)
 const dropIndex = ref(-1)
 const moved = ref(false)
@@ -44,6 +58,8 @@ function startDrag(index: number, ev: PointerEvent) {
     w: r.width,
     x: ev.clientX,
     y: ev.clientY,
+    startLeft: r.left,
+    startTop: r.top,
   }
   dropIndex.value = index
   moved.value = false
@@ -58,8 +74,11 @@ function onMove(ev: PointerEvent) {
   if (!d) return
   d.x = ev.clientX
   d.y = ev.clientY
-  if (Math.abs(ev.clientX - (d.x - d.dx)) > 2) moved.value = true
-  moved.value = true
+  if (!moved.value) {
+    const dx = (d.x - d.dx) - d.startLeft
+    const dy = (d.y - d.dy) - d.startTop
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.value = true
+  }
   const rects = chipRects()
   let best = d.from
   let bestDist = Number.POSITIVE_INFINITY
@@ -76,9 +95,16 @@ function endDrag() {
   window.removeEventListener('pointercancel', endDrag)
   const d = drag.value
   const to = dropIndex.value
+  const wasMoved = moved.value
   drag.value = null
   dropIndex.value = -1
-  if (!d || to < 0 || to === d.from) return
+  moved.value = false
+  if (!d) return
+  if (!wasMoved) {            // 只是点了一下 → 切换“是否显示在格子上”
+    toggleShown(d.label)
+    return
+  }
+  if (to < 0 || to === d.from) return
   const list = [...chips.value]
   const [item] = list.splice(d.from, 1)
   list.splice(to, 0, item)
@@ -126,6 +152,19 @@ function handleBlur() {
 
 function removeTag(tag: string) {
   chips.value = chips.value.filter((t) => t !== tag)
+  if (props.shown.includes(tag)) {
+    emit('update:shown', props.shown.filter((t) => t !== tag))
+  }
+}
+
+function toggleShown(tag: string) {
+  const shown = props.shown
+  if (shown.includes(tag)) {
+    emit('update:shown', shown.filter((t) => t !== tag))
+    return
+  }
+  if (shown.length >= 3) return   // 格子上最多显示 3 个标签
+  emit('update:shown', [...shown, tag])
 }
 </script>
 
@@ -143,9 +182,9 @@ function removeTag(tag: string) {
             class="chip chip-tag tag-drag !px-1.5 !text-[10.5px] !py-0.5"
             :class="{ 'tag-dragging': drag && drag.from === i,
                       'tag-drop-target': dropIndex === i && drag && drag.from !== i }"
-            :title="'拖动可排序：' + tag"
+            :title="'点击开关显示，拖动排序：' + tag"
             @pointerdown="startDrag(i, $event)">
-        #{{ tag }}
+        <span class="tag-shown-mark">{{ shown.includes(tag) ? '✓' : ' ' }}</span>#{{ tag }}
         <button type="button" class="tag-chip-x" :title="'删除 ' + tag"
                 @pointerdown.stop @click.stop="removeTag(tag)">
           <X :size="10" />

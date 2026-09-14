@@ -153,18 +153,10 @@ watch(tags, (list) => {
   if (kept.length !== displayTags.value.length) displayTags.value = kept
 })
 
-// 一键重置：显示标签清空、显示字段回到默认（标称值+封装）
+// 恢复默认：不显示自定义标签，系统字段回到标称值+封装
 function resetDisplay() {
   displayTags.value = []
   displayFields.value = ['value', 'package']
-}
-
-function toggleDisplay(tag: string) {
-  if (displayTags.value.includes(tag)) {
-    displayTags.value = displayTags.value.filter((t) => t !== tag)
-  } else if (displayTags.value.length < 3) {
-    displayTags.value = [...displayTags.value, tag]
-  }
 }
 
 async function save() {
@@ -320,44 +312,29 @@ function close() {
                   </div>
                 </div>
 
-                <div>
-                  <label class="field-label">标签</label>
-                  <TagEditor v-model="tags" :suggestions="tagSuggestions"
-                             placeholder="回车添加" />
-                </div>
-                <div v-if="tags.length">
-                  <label class="field-label">显示标签</label>
-                  <div class="flex flex-wrap gap-1.5">
-                    <button v-for="tag in tags" :key="tag" type="button"
-                            class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
-                            :class="displayTags.includes(tag) ? '' : 'opacity-45 hover:opacity-80'"
-                            :style="displayTags.includes(tag)
-                              ? 'background: linear-gradient(120deg, #7c6cf0, #8b8ef7); border-color: transparent; color: #fff'
-                              : ''"
-                            @click="toggleDisplay(tag)">
-                      {{ displayTags.includes(tag) ? '✓ ' : '' }}{{ tag }}
-                    </button>
+                <div class="rounded-xl px-3 py-2.5"
+                     style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="mb-2 flex items-center gap-2">
+                    <span class="field-label !mb-0">标签与显示</span>
+                    <button type="button" class="text-[11px] hover:underline"
+                            style="color: var(--text-faint)" @click="resetDisplay">恢复默认</button>
                   </div>
-                </div>
-
-                <div>
-                  <div class="mb-1 flex items-center gap-2">
-                    <span class="field-label !mb-0">显示字段</span>
-                    <button type="button" class="text-[11px] underline-offset-2 hover:underline"
-                            style="color: var(--text-faint)" @click="resetDisplay">
-                      重置显示设置
-                    </button>
-                  </div>
-                  <div class="flex flex-wrap gap-1.5">
+                  <!-- 系统字段：不可删除，点一下开关是否显示 -->
+                  <div class="mb-2 flex flex-wrap gap-1.5">
                     <button v-for="key in FIELD_KEYS" :key="key" type="button"
                             class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
                             :class="displayFields.includes(key) ? '' : 'opacity-45 hover:opacity-80'"
                             :style="displayFields.includes(key)
                               ? 'color: var(--accent); border-color: var(--accent)' : ''"
+                            :title="'系统字段，点一下开关显示'"
                             @click="toggleField(key)">
                       {{ displayFields.includes(key) ? '✓ ' : '' }}{{ FIELD_LABELS[key] }}
                     </button>
                   </div>
+                  <!-- 自定义标签：点一下开关显示、拖动排序、× 删除 -->
+                  <TagEditor v-model="tags" v-model:shown="displayTags"
+                             :suggestions="tagSuggestions"
+                             placeholder="输入后回车添加标签" />
                 </div>
 
                 <!-- 位置 + 阈值 -->

@@ -608,7 +608,19 @@ html.light .bin-card.has-supplier {
 .tag-drag { cursor: grab; touch-action: none; user-select: none; }
 .tag-drag:active { cursor: grabbing; }
 .tag-dragging { opacity: 0.25; }
-.tag-drop-target { box-shadow: -2px 0 0 0 var(--accent); }
+.tag-drag { position: relative; }
+/* 插入位置提示：独立竖直直线（不跟着圆角弯曲） */
+.tag-drop-target::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 15%;
+  width: 2px;
+  height: 70%;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+}
 .tag-float-chip {
   position: fixed;
   z-index: 400;
@@ -637,4 +649,11 @@ html.light .bin-card.has-supplier {
   background: color-mix(in srgb, var(--success) 12%, var(--surface));
   border-color: color-mix(in srgb, var(--success) 38%, var(--line-strong));
   color: color-mix(in srgb, var(--success) 80%, var(--text-dim));
+}
+/* 标签 chip 的“显示中”标记：固定宽度避免抖动 */
+.tag-shown-mark {
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+  opacity: 0.85;
 }

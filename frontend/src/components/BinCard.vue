@@ -36,7 +36,7 @@ const fields = computed<string[]>(() => props.comp.display_fields ?? ['value', '
 const cardTags = computed<string[]>(() => {
   const shown = props.comp.display_tags ?? []
   if (shown.length) return shown
-  return (props.comp.tags ?? []).slice(0, 2)
+  return props.comp.tags ?? []
 })
 const show = (name: string) => fields.value.includes(name)
 
@@ -101,14 +101,14 @@ const title = computed(() => {
       >{{ comp.supplier_part }}</span>
     </div>
 
-    <!-- 显示标签：最多 2 个 + 「+N」；未挑选显示标签时自动兜底展示 -->
+    <!-- 显示标签：最多 3 个（超出才折叠为 +N）；未挑选时自动展示全部标签 -->
     <div v-if="cardTags.length" class="mt-1 flex flex-wrap items-center gap-1">
-      <span v-for="tag in cardTags.slice(0, 2)" :key="tag"
+      <span v-for="tag in cardTags.slice(0, 3)" :key="tag"
             class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
             :title="tag">#{{ tag }}</span>
-      <span v-if="cardTags.length > 2"
+      <span v-if="cardTags.length > 3"
             class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
-            :title="cardTags.join('、')">+{{ cardTags.length - 2 }}</span>
+            :title="cardTags.join('、')">+{{ cardTags.length - 3 }}</span>
     </div>
 
     <div class="flex-1" />
