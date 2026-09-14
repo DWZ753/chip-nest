@@ -47,7 +47,7 @@
 - 下载安装包：**[Releases 页面](https://github.com/DWZ753/chip-nest/releases/latest)**
   （附件 `ChipNest-Setup-<版本>.exe`；本地构建产物在 `electron/release/`），按向导安装；
   数据保存在 `%APPDATA%/ChipNest/`，升级安装不会丢失。
-- 当前正式版：**v1.0.1**（界面左上角与「设置 → 版本」可核对）。
+- 当前正式版：**v1.1.0**（界面左上角与「设置 → 版本」可核对）。
 - 升级前请在任务管理器结束 `ChipNest.exe`，避免安装时文件被占用。
 - 首次运行若提示 SmartScreen，选择“更多信息 → 仍要运行”（安装包暂未签名）。
 
