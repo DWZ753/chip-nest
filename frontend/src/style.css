@@ -604,12 +604,25 @@ html.light .bin-card.has-supplier {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 标签拖拽排序反馈 */
-.tag-drag { cursor: grab; }
+/* 标签拖拽排序：跟手悬浮副本 + 插入指示 */
+.tag-drag { cursor: grab; touch-action: none; user-select: none; }
 .tag-drag:active { cursor: grabbing; }
-.tag-dragging { opacity: 0.4; }
-.tag-drop-target {
-  box-shadow: -2px 0 0 0 var(--accent);
+.tag-dragging { opacity: 0.25; }
+.tag-drop-target { box-shadow: -2px 0 0 0 var(--accent); }
+.tag-float-chip {
+  position: fixed;
+  z-index: 400;
+  pointer-events: none;
+  transform: scale(1.06) rotate(-1deg);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--violet) 22%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--violet) 60%, var(--line-strong));
+  border-radius: 6px;
+  padding: 2px 6px;
+  box-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.65);
 }
 /* 卡片上的料号 chip */
 .chip-mpn {

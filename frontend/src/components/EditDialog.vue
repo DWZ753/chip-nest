@@ -153,6 +153,12 @@ watch(tags, (list) => {
   if (kept.length !== displayTags.value.length) displayTags.value = kept
 })
 
+// 一键重置：显示标签清空、显示字段回到默认（标称值+封装）
+function resetDisplay() {
+  displayTags.value = []
+  displayFields.value = ['value', 'package']
+}
+
 function toggleDisplay(tag: string) {
   if (displayTags.value.includes(tag)) {
     displayTags.value = displayTags.value.filter((t) => t !== tag)
@@ -320,7 +326,7 @@ function close() {
                              placeholder="回车添加" />
                 </div>
                 <div v-if="tags.length">
-                  <label class="field-label">展示标签</label>
+                  <label class="field-label">显示标签</label>
                   <div class="flex flex-wrap gap-1.5">
                     <button v-for="tag in tags" :key="tag" type="button"
                             class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
@@ -335,7 +341,13 @@ function close() {
                 </div>
 
                 <div>
-                  <label class="field-label">卡片显示</label>
+                  <div class="mb-1 flex items-center gap-2">
+                    <span class="field-label !mb-0">显示字段</span>
+                    <button type="button" class="text-[11px] underline-offset-2 hover:underline"
+                            style="color: var(--text-faint)" @click="resetDisplay">
+                      重置显示设置
+                    </button>
+                  </div>
                   <div class="flex flex-wrap gap-1.5">
                     <button v-for="key in FIELD_KEYS" :key="key" type="button"
                             class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"

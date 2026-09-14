@@ -32,11 +32,19 @@ const bandWidth = computed(() => {
 })
 
 const fields = computed<string[]>(() => props.comp.display_fields ?? ['value', 'package'])
+// 显示标签：未单独挑选时，自动用前两个普通标签兜底，保证标签一定会出现在格子上
+const cardTags = computed<string[]>(() => {
+  const shown = props.comp.display_tags ?? []
+  if (shown.length) return shown
+  return (props.comp.tags ?? []).slice(0, 2)
+})
 const show = (name: string) => fields.value.includes(name)
 
-const title = computed(() =>
-  [props.comp.name, props.comp.value, props.comp.package].filter(Boolean).join(' · '),
-)
+const title = computed(() => {
+  const base = [props.comp.name, props.comp.value, props.comp.package].filter(Boolean)
+  const tags = props.comp.tags ?? []
+  return tags.length ? base.join(' · ') + ' · #' + tags.join(' #') : base.join(' · ')
+})
 </script>
 
 <template>
@@ -93,16 +101,14 @@ const title = computed(() =>
       >{{ comp.supplier_part }}</span>
     </div>
 
-    <!-- 展示标签：卡片中部空白区独立成行，任何宽度都显示 -->
-    <div v-if="(comp.display_tags ?? []).length"
-         class="mt-1 flex flex-wrap items-center gap-1">
-      <template v-for="tag in (comp.display_tags ?? []).slice(0, 2)" :key="tag">
-        <span class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
-              :title="tag">#{{ tag }}</span>
-      </template>
-      <span v-if="(comp.display_tags ?? []).length > 2"
+    <!-- 显示标签：最多 2 个 + 「+N」；未挑选显示标签时自动兜底展示 -->
+    <div v-if="cardTags.length" class="mt-1 flex flex-wrap items-center gap-1">
+      <span v-for="tag in cardTags.slice(0, 2)" :key="tag"
+            class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
+            :title="tag">#{{ tag }}</span>
+      <span v-if="cardTags.length > 2"
             class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
-            :title="(comp.display_tags ?? []).join('、')">+{{ comp.display_tags.length - 2 }}</span>
+            :title="cardTags.join('、')">+{{ cardTags.length - 2 }}</span>
     </div>
 
     <div class="flex-1" />
