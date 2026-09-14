@@ -78,58 +78,60 @@ function chipClass(chip: Chip): string {
 // ---------- 自适应：按行内实际宽度决定显示几个，其余折叠为 +N ----------
 const chipsRow = ref<HTMLElement | null>(null)
 const measureEl = ref<HTMLElement | null>(null)
-const visibleCount = ref(0)
+const visibleFlags = ref<boolean[]>([])
 let observer: ResizeObserver | null = null
 
-const MAX_ROWS = 2
+const MAX_ROWS = 3            // 字段优先：最多三行保证字段可见
 const GAP = 3
-
-function rowsNeeded(widths: number[], count: number, width: number): number {
-  let rows = 1
-  let used = 0
-  for (let i = 0; i < count; i += 1) {
-    const need = widths[i] + (i ? GAP : 0)
-    if (used + need <= width) { used += need; continue }
-    rows += 1
-    used = widths[i]
-    if (rows > MAX_ROWS) return rows
-  }
-  return rows
-}
-
-function lastRowRemain(widths: number[], count: number, width: number): number {
-  let rows = 1
-  let used = 0
-  for (let i = 0; i < count; i += 1) {
-    const need = widths[i] + (i ? GAP : 0)
-    if (used + need <= width) { used += need; continue }
-    rows += 1
-    used = widths[i]
-  }
-  return rows > MAX_ROWS ? -1 : width - used
-}
 
 function recompute() {
   const list = chips.value
   const row = chipsRow.value
   const box = measureEl.value
-  if (!list.length) { visibleCount.value = 0; return }
+  if (!list.length) { visibleFlags.value = []; return }
   const width = row?.clientWidth ?? 0
   const nodes = Array.from(box?.children ?? []) as HTMLElement[]
-  if (!width || nodes.length < list.length + 1) { visibleCount.value = list.length; return }
+  if (!width || nodes.length < list.length + 1) {
+    visibleFlags.value = list.map(() => true)
+    return
+  }
   const widths = nodes.slice(0, list.length).map((n) => n.getBoundingClientRect().width)
   const plusW = nodes[list.length].getBoundingClientRect().width + GAP
-  // 尽量多放：从全部开始回退，直到「前 count 个 + +N」能在 MAX_ROWS 行内放下
-  let count = list.length
-  while (count > 0) {
-    const hidden = list.length - count
-    if (rowsNeeded(widths, count, width) <= MAX_ROWS) {
-      if (hidden === 0) break
-      if (lastRowRemain(widths, count, width) >= plusW) break
+
+  // 逐行贪心：字段必须放下（可换行），标签放不下则折叠
+  const flags = list.map(() => false)
+  let rows = 1
+  let used = 0
+  let hiddenTags = 0
+  list.forEach((chip, i) => {
+    const need = widths[i] + (used > 0 ? GAP : 0)
+    if (used + need <= width) {
+      flags[i] = true
+      used += need
+      return
     }
-    count -= 1
+    if (chip.kind === 'field') {
+      if (rows < MAX_ROWS) { rows += 1; used = widths[i]; flags[i] = true; return }
+      used += need            // 极端情况：字段也硬放（宁可挤一行）
+      flags[i] = true
+      return
+    }
+    hiddenTags += 1           // 标签：放不下就折叠
+  })
+
+  // +N 本身要放得进：放不进且还有标签时，继续折叠一个
+  while (hiddenTags > 0) {
+    const remain = width - used
+    if (remain >= plusW || used === 0) break
+    const lastTag = [...list].reverse().findIndex((c, idx) =>
+      c.kind === 'tag' && flags[list.length - 1 - idx])
+    if (lastTag < 0) break
+    const realIdx = list.length - 1 - lastTag
+    flags[realIdx] = false
+    used = Math.max(0, used - widths[realIdx] - GAP)
+    hiddenTags += 1
   }
-  visibleCount.value = Math.max(1, count)
+  visibleFlags.value = flags
 }
 
 onMounted(async () => {
@@ -143,9 +145,10 @@ onMounted(async () => {
 onBeforeUnmount(() => observer?.disconnect())
 watch(chips, async () => { await nextTick(); recompute() })
 
-const visibleChips = computed(() => chips.value.slice(0, visibleCount.value))
-const hiddenCount = computed(() => Math.max(0, chips.value.length - visibleCount.value))
-const hiddenText = computed(() => chips.value.slice(visibleCount.value).map((c) => c.text).join('、'))
+const visFlags = computed(() => visibleFlags.value)
+const hiddenChips = computed(() => chips.value.filter((_, i) => !visFlags.value[i]))
+const hiddenCount = computed(() => hiddenChips.value.length)
+const hiddenText = computed(() => hiddenChips.value.map((c) => c.text).join('、'))
 
 const bandCls = computed(() => {
   const q = props.comp.quantity
@@ -195,7 +198,7 @@ const title = computed(() => {
 
     <!-- 统一显示链：字段与标签同一序列，单行自适应，放不下折叠为 +N -->
     <div v-if="chips.length" ref="chipsRow" class="chips-row mt-0.5 flex flex-wrap items-center overflow-hidden">
-      <span v-for="chip in visibleChips" :key="chip.token"
+      <span v-for="(chip, i) in chips" v-show="visFlags[i]" :key="chip.token"
             class="chip !px-1.5 !text-[9.5px] chip-cell" :class="chipClass(chip)"
             :title="chip.kind === 'field' ? FIELD_LABEL[chip.key] + ' ' + chip.text : chip.text">
         {{ chip.text }}
