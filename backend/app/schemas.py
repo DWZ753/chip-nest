@@ -231,6 +231,14 @@ class TransactionOut(BaseModel):
 
 # ---------- 数据维护 ----------
 
+class DataSummaryOut(BaseModel):
+    """数据概况：清空按钮据此禁用（啥都没有时不给点）。"""
+
+    components: int = Field(ge=0)
+    transactions: int = Field(ge=0)
+    empty: bool
+
+
 class ResetRequest(BaseModel):
     """清空所有数据：confirm 必须等于确认词（前端要用户手输），防误触。"""
 

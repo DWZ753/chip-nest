@@ -86,6 +86,13 @@ export interface AdapterStatus {
   error: string | null
 }
 
+// 数据概况（清空按钮据此禁用）
+export interface DataSummary {
+  components: number
+  transactions: number
+  empty: boolean
+}
+
 // 一键清空（POST /api/v1/system/reset）的返回
 export interface ResetResult {
   deleted_components: number

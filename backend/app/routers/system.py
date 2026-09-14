@@ -15,7 +15,7 @@ from typing import Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config, schemas
@@ -33,6 +33,18 @@ RESET_CONFIRM_WORD = "清空"
 async def system_status() -> dict:
     """返回 {mode: serial|mock, connected, device, error}。"""
     return get_manager().status()
+
+
+@router.get("/system/data-summary", response_model=schemas.DataSummaryOut)
+async def data_summary(session: AsyncSession = Depends(get_session)) -> dict:
+    """当前有多少元件与流水：都为空时前端把「清空所有数据」按钮禁掉。"""
+    components = await session.scalar(select(func.count()).select_from(Component)) or 0
+    transactions = await session.scalar(select(func.count()).select_from(Transaction)) or 0
+    return {
+        "components": components,
+        "transactions": transactions,
+        "empty": components == 0 and transactions == 0,
+    }
 
 
 def _as_list(raw: Optional[str]) -> list:

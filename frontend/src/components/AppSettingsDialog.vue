@@ -6,14 +6,12 @@ import {
 import { DatabaseZap, MonitorCog, Moon, Palette, Sun, Trash2, X } from '@lucide/vue'
 
 import { api } from '../api/client'
-import type { ResetResult } from '../api/types'
-import { useBinsStore } from '../stores/bins'
+import type { DataSummary, ResetResult } from '../api/types'
 import { useConnectionStore } from '../stores/connection'
 import { useTheme } from '../stores/theme'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; reset: [] }>()
-const bins = useBinsStore()
 const connection = useConnectionStore()
 const { dark, setLight, fontScale, setFontScale, FONT_STEPS } = useTheme()
 const SCALE_LABELS = ['小', '中', '大', '特大']
@@ -34,8 +32,17 @@ const resetError = ref<string | null>(null)
 const wiped = ref<ResetResult | null>(null)
 
 const canConfirm = computed(() => !busy.value && confirmText.value.trim() === CONFIRM_WORD)
-// 只在没筛选时给确切数量，筛选中报数字会误导
-const knownCount = computed(() => (bins.query.trim() ? null : bins.components.length))
+// 数据概况：库里啥都没有时清空按钮不可点（数量也取自这里，不受搜索筛选影响）
+const summary = ref<DataSummary | null>(null)
+const canWipe = computed(() => !!summary.value && !summary.value.empty)
+
+async function loadSummary() {
+  try {
+    summary.value = await api.dataSummary()
+  } catch {
+    summary.value = null  // 取不到就不放行，避免误点
+  }
+}
 
 function startConfirm() {
   confirmText.value = ''
@@ -61,6 +68,7 @@ async function doReset() {
     })
     confirming.value = false
     confirmText.value = ''
+    await loadSummary()  // 已清空 -> 按钮随即变灰
     emit('reset')
   } catch (e) {
     resetError.value = e instanceof Error ? e.message : String(e)
@@ -69,9 +77,12 @@ async function doReset() {
   }
 }
 
-// 弹窗关上就收起确认态与上次的结果提示
+// 打开时取一次概况（决定按钮能不能点）；关上则收起确认态与上次的结果提示
 watch(() => props.open, (open) => {
-  if (open) return
+  if (open) {
+    void loadSummary()
+    return
+  }
   confirming.value = false
   confirmText.value = ''
   resetError.value = null
@@ -168,9 +179,12 @@ watch(() => props.open, (open) => {
                     <p class="mb-3 text-[12px] leading-relaxed" style="color: var(--text-dim)">
                       清空全部元件与操作流水，回到刚装好的状态。清空前会自动留一份备份文件，需要时能找回。
                     </p>
-                    <button class="btn btn-danger" @click="startConfirm">
+                    <button class="btn btn-danger" :disabled="!canWipe" @click="startConfirm">
                       <Trash2 :size="14" class="mr-1 inline" />清空所有数据
                     </button>
+                    <div v-if="summary && summary.empty" class="mt-2 text-[12px]" style="color: var(--text-faint)">
+                      当前没有元件与操作流水，不需要清空。
+                    </div>
 
                     <div v-if="wiped" class="mt-3 rounded-xl px-3 py-2 text-[12px] leading-relaxed"
                          style="background: var(--surface-2); border: 1px solid var(--line)">
@@ -187,7 +201,7 @@ watch(() => props.open, (open) => {
                          style="background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.34)">
                       <div class="font-bold" style="color: var(--danger)">清空后无法撤销（会先自动备份）。</div>
                       <div class="mt-1" style="color: var(--text-dim)">
-                        将删除全部元件<span v-if="knownCount !== null">（当前 {{ knownCount }} 个）</span>与全部操作流水。
+                        将删除 {{ summary?.components ?? 0 }} 个元件、{{ summary?.transactions ?? 0 }} 条操作流水。
                       </div>
                       <label class="mt-2 flex cursor-pointer items-start gap-2" style="color: var(--text-dim)">
                         <input v-model="resetLayout" type="checkbox" style="accent-color: var(--danger)" />

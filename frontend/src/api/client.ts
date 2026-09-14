@@ -1,6 +1,6 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
-  AdapterStatus, BomParseOut, BomPlan, ComponentItem, LayoutConfig,
+  AdapterStatus, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
   ResetResult, TransactionRow,
 } from './types'
 
@@ -102,6 +102,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ component_id: componentId, amount }),
     }),
+
+  // 数据概况：清空按钮据此禁用（没有可清内容时不给点）
+  dataSummary: () => request<DataSummary>('/api/v1/system/data-summary'),
 
   // 一键清空：删光元件与流水，可选把布局恢复初始状态（后端先自动备份）
   resetData: (payload: { confirm: string; reset_layout: boolean }) =>

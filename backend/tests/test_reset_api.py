@@ -121,6 +121,29 @@ async def test_reset_keeps_layout_when_asked(client):
     assert (await client.get("/api/v1/components")).json() == []
 
 
+async def test_data_summary_drives_button_state(client):
+    """概况接口：空库 empty=True，有数据后 False，清空后又回到 True。"""
+    body = (await client.get("/api/v1/system/data-summary")).json()
+    assert (body["components"], body["transactions"], body["empty"]) == (0, 0, True)
+
+    await _create(client, slot=0)
+    comp = (await client.get("/api/v1/components")).json()[0]
+    await client.post(f"/api/v1/components/{comp['id']}/stock", json={"delta": -1})
+    body = (await client.get("/api/v1/system/data-summary")).json()
+    assert body["components"] == 1 and body["transactions"] > 0 and body["empty"] is False
+
+    await client.post("/api/v1/system/reset", json={"confirm": "清空"})
+    body = (await client.get("/api/v1/system/data-summary")).json()
+    assert (body["components"], body["transactions"], body["empty"]) == (0, 0, True)
+
+    # 只剩流水（元件被逐个删掉）时也不能算「没东西可清」
+    fresh = await _create(client, slot=0)
+    await client.delete(f"/api/v1/components/{fresh['id']}")
+    body = (await client.get("/api/v1/system/data-summary")).json()
+    assert body["components"] == 0 and body["transactions"] > 0
+    assert body["empty"] is False
+
+
 async def test_reset_on_empty_db_is_idempotent(client):
     """空库再清一次也不报错，计数为 0，备份照留。"""
     resp = await client.post("/api/v1/system/reset", json={"confirm": "清空"})
