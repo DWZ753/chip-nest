@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
   AdapterStatus, BomParseOut, BomPlan, ComponentItem, LayoutConfig,
-  TransactionRow,
+  ResetResult, TransactionRow,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -101,6 +101,12 @@ export const api = {
     request<ComponentItem>('/api/v1/bom/pick', {
       method: 'POST',
       body: JSON.stringify({ component_id: componentId, amount }),
+    }),
+
+  // 一键清空：删光元件与流水，可选把布局恢复初始状态（后端先自动备份）
+  resetData: (payload: { confirm: string; reset_layout: boolean }) =>
+    request<ResetResult>('/api/v1/system/reset', {
+      method: 'POST', body: JSON.stringify(payload),
     }),
 
   // 审计 / 系统（M4）

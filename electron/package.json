@@ -1,7 +1,7 @@
 {
   "name": "chipnest-electron",
   "productName": "ChipNest",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "智能元件管家 · 桌面壳",
   "main": "main.js",
   "author": "ChipNest",

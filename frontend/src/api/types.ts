@@ -86,6 +86,14 @@ export interface AdapterStatus {
   error: string | null
 }
 
+// 一键清空（POST /api/v1/system/reset）的返回
+export interface ResetResult {
+  deleted_components: number
+  deleted_transactions: number
+  backup_path: string
+  layout_reset: boolean
+}
+
 // WS /api/v1/ws/status 消息：{"type":"adapter.status", ...AdapterStatus}
 export interface WsStatusMessage extends AdapterStatus {
   type: string

@@ -46,6 +46,14 @@ def db_file() -> Path:
     return Path(raw)
 
 
+def backup_dir() -> Path:
+    """清空数据前的自动备份目录：默认与数据库同目录的 backups/。"""
+    raw = os.getenv("CHIPNEST_BACKUP_DIR")
+    path = Path(raw) if raw else db_file().parent / "backups"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def log_dir() -> Path:
     """按日期滚动的日志目录（Loguru）。"""
     path = Path(os.getenv("CHIPNEST_LOG_DIR", _runtime_root() / "logs"))

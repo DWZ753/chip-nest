@@ -180,6 +180,16 @@ export const useBinsStore = defineStore('bins', () => {
     return moved
   }
 
+  // 清空数据后：清掉检索词/高亮/引导，并把布局与元件整体重拉
+  async function resetAfterWipe() {
+    query.value = ''
+    lastFlashQuery = ''
+    window.clearTimeout(queryTimer)
+    flashKeys.value = {}
+    guideKey.value = null
+    await refreshAll()
+  }
+
   // ---- BOM 引导联动 ----
   function setGuidePosition(pos: BinPosition | null) {
     guideKey.value = pos ? positionKey(pos) : null
@@ -191,5 +201,6 @@ export const useBinsStore = defineStore('bins', () => {
     refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
     updateZoneName,
     removeComponent, adjustStock, relocateOrphans, setGuidePosition,
+    resetAfterWipe,
   }
 })

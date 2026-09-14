@@ -6,6 +6,12 @@ from typing import Optional
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+# 默认货架布局：1 区 x 3 层 x 1 行 4 列（12 格）
+# 首次初始化种入此值；「清空数据」也恢复到此状态
+DEFAULT_LAYOUT: dict[str, int] = dict(
+    zone_count=1, layer_count=3, row_count=1, col_count=4
+)
+
 
 def utcnow() -> dt.datetime:
     """无时区 UTC 时间，统一入库格式。"""

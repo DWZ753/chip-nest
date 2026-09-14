@@ -121,6 +121,14 @@ class AdapterManager:
             return
         await self._send(led_index, *ORANGE)
 
+    async def clear_leds(self, indexes) -> None:
+        """批量熄灭灯位（清空数据用）：逐个下发 OFF，单个失败不影响其余。"""
+        for index in sorted({int(i) for i in indexes if i is not None}):
+            try:
+                await self._send(index, *OFF)
+            except Exception:
+                logger.exception("熄灭灯位失败 index={}", index)
+
     async def _send(self, index: int, r: int, g: int, b: int) -> None:
         adapter = self._active
         if adapter is not None:

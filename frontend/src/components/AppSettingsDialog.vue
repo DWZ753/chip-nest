@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import {} from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { MonitorCog, Moon, Palette, Sun, X } from '@lucide/vue'
+import { DatabaseZap, MonitorCog, Moon, Palette, Sun, Trash2, X } from '@lucide/vue'
 
+import { api } from '../api/client'
+import type { ResetResult } from '../api/types'
+import { useBinsStore } from '../stores/bins'
 import { useConnectionStore } from '../stores/connection'
 import { useTheme } from '../stores/theme'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; reset: [] }>()
+const bins = useBinsStore()
 const connection = useConnectionStore()
 const { dark, setLight, fontScale, setFontScale, FONT_STEPS } = useTheme()
 const SCALE_LABELS = ['小', '中', '大', '特大']
@@ -18,6 +22,61 @@ const MODE_TEXT = {
   serial: '串口模式',
   mock: '模拟模式',
 } as Record<string, string>
+
+// ---- 清空所有数据 ----
+// 确认词与后端 app/routers/system.py 的 RESET_CONFIRM_WORD 必须一致
+const CONFIRM_WORD = '清空'
+const confirming = ref(false)
+const confirmText = ref('')
+const resetLayout = ref(true)
+const busy = ref(false)
+const resetError = ref<string | null>(null)
+const wiped = ref<ResetResult | null>(null)
+
+const canConfirm = computed(() => !busy.value && confirmText.value.trim() === CONFIRM_WORD)
+// 只在没筛选时给确切数量，筛选中报数字会误导
+const knownCount = computed(() => (bins.query.trim() ? null : bins.components.length))
+
+function startConfirm() {
+  confirmText.value = ''
+  resetError.value = null
+  wiped.value = null
+  confirming.value = true
+}
+
+function cancelConfirm() {
+  confirming.value = false
+  confirmText.value = ''
+  resetError.value = null
+}
+
+async function doReset() {
+  if (!canConfirm.value) return
+  busy.value = true
+  resetError.value = null
+  try {
+    wiped.value = await api.resetData({
+      confirm: confirmText.value.trim(),
+      reset_layout: resetLayout.value,
+    })
+    confirming.value = false
+    confirmText.value = ''
+    emit('reset')
+  } catch (e) {
+    resetError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+// 弹窗关上就收起确认态与上次的结果提示
+watch(() => props.open, (open) => {
+  if (open) return
+  confirming.value = false
+  confirmText.value = ''
+  resetError.value = null
+  wiped.value = null
+})
 </script>
 
 <template>
@@ -40,7 +99,7 @@ const MODE_TEXT = {
                 <button class="icon-btn ml-auto !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
               </div>
 
-              <div class="flex flex-col gap-4">
+              <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
                 <!-- 外观 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">外观</div>
@@ -97,6 +156,55 @@ const MODE_TEXT = {
                     <span style="color: var(--text-dim)">设备：{{ connection.status.device ?? '—' }}</span>
                     <span style="color: var(--text-faint)">{{ connection.status.error ?? '' }}</span>
                   </div>
+                </section>
+
+                <!-- 数据：一键清空回到干净初始状态 -->
+                <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
+                    <DatabaseZap :size="15" style="color: var(--danger)" /> 数据
+                  </div>
+
+                  <template v-if="!confirming">
+                    <p class="mb-3 text-[12px] leading-relaxed" style="color: var(--text-dim)">
+                      清空全部元件与操作流水，回到刚装好的状态。清空前会自动留一份备份文件，需要时能找回。
+                    </p>
+                    <button class="btn btn-danger" @click="startConfirm">
+                      <Trash2 :size="14" class="mr-1 inline" />清空所有数据
+                    </button>
+
+                    <div v-if="wiped" class="mt-3 rounded-xl px-3 py-2 text-[12px] leading-relaxed"
+                         style="background: var(--surface-2); border: 1px solid var(--line)">
+                      <div class="font-bold" style="color: var(--success)">
+                        已清空：删除 {{ wiped.deleted_components }} 个元件、{{ wiped.deleted_transactions }} 条操作流水{{ wiped.layout_reset ? '，布局回到初始状态' : '' }}
+                      </div>
+                      <div class="mt-1" style="color: var(--text-dim)">备份文件：</div>
+                      <div class="mono mt-0.5 break-all" style="color: var(--text-faint)">{{ wiped.backup_path }}</div>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="rounded-xl p-3 text-[12px] leading-relaxed"
+                         style="background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.34)">
+                      <div class="font-bold" style="color: var(--danger)">清空后无法撤销（会先自动备份）。</div>
+                      <div class="mt-1" style="color: var(--text-dim)">
+                        将删除全部元件<span v-if="knownCount !== null">（当前 {{ knownCount }} 个）</span>与全部操作流水。
+                      </div>
+                      <label class="mt-2 flex cursor-pointer items-start gap-2" style="color: var(--text-dim)">
+                        <input v-model="resetLayout" type="checkbox" style="accent-color: var(--danger)" />
+                        <span>同时把仓库布局恢复为 1 区 × 3 层 × 1 行 4 列</span>
+                      </label>
+                      <div class="mt-3" style="color: var(--text-dim)">请输入「{{ CONFIRM_WORD }}」两个字确认：</div>
+                      <input v-model="confirmText" class="input mt-1.5" :placeholder="CONFIRM_WORD"
+                             maxlength="4" @keyup.enter="doReset" />
+                      <div v-if="resetError" class="mt-2 font-bold" style="color: var(--danger)">{{ resetError }}</div>
+                      <div class="mt-3 flex items-center gap-2">
+                        <button class="btn btn-danger" :disabled="!canConfirm" @click="doReset">
+                          {{ busy ? '正在清空…' : '确认清空' }}
+                        </button>
+                        <button class="btn btn-ghost" :disabled="busy" @click="cancelConfirm">取消</button>
+                      </div>
+                    </div>
+                  </template>
                 </section>
               </div>
 

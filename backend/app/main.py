@@ -12,15 +12,12 @@ from sqlalchemy import select
 from app import config, log
 from app.hal.manager import get_manager
 from app.db import async_session, engine, upgrade_legacy_columns
-from app.models import Base, LayoutConfig
+from app.models import DEFAULT_LAYOUT, Base, LayoutConfig
 from app.routers import bom, components, layout, system, transactions, ws
 
 import os as _os
 
 log.init_logging()
-
-# 默认货架布局：1 区 x 3 层 x 1 行 4 列（12 格）
-DEFAULT_LAYOUT = dict(zone_count=1, layer_count=3, row_count=1, col_count=4)
 
 
 async def _run_migrations() -> None:
@@ -54,7 +51,7 @@ async def lifespan(_app: FastAPI):
     await get_manager().stop()
 
 
-app = FastAPI(title="ChipNest", version="1.0.1", lifespan=lifespan)
+app = FastAPI(title="ChipNest", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

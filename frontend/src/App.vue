@@ -61,6 +61,13 @@ function openManual() {
   manualOpen.value = true
 }
 
+// 一键清空之后：收掉引导/BOM 弹窗，清检索词并重拉整个网格
+async function afterWipe() {
+  guideOpen.value = false
+  bomOpen.value = false
+  try { await bins.resetAfterWipe() } catch { /* 下次操作自愈 */ }
+}
+
 async function refreshAfterGuide() {
   try { await bins.refreshAll() } catch { /* 下次操作自愈 */ }
 }
@@ -111,7 +118,7 @@ async function retry() {
       @manual="openManual"
     />
     <ManualStockDialog :open="manualOpen" @close="manualOpen = false" />
-    <AppSettingsDialog :open="settingsOpen" @close="settingsOpen = false" />
+    <AppSettingsDialog :open="settingsOpen" @close="settingsOpen = false" @reset="afterWipe" />
     <GuideOverlay
       :open="guideOpen"
       :steps="guideSteps"

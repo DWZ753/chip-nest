@@ -229,6 +229,25 @@ class TransactionOut(BaseModel):
     source: Optional[str]
 
 
+# ---------- 数据维护 ----------
+
+class ResetRequest(BaseModel):
+    """清空所有数据：confirm 必须等于确认词（前端要用户手输），防误触。"""
+
+    confirm: str = Field(min_length=1, max_length=16)
+    # True=布局也恢复为初始值；False=保留当前分区/尺寸，只清元件与流水
+    reset_layout: bool = True
+
+
+class ResetResult(BaseModel):
+    """清空结果：删除条数 + 自动备份文件位置（可据此手工恢复）。"""
+
+    deleted_components: int = Field(ge=0)
+    deleted_transactions: int = Field(ge=0)
+    backup_path: str
+    layout_reset: bool
+
+
 # ---------- BOM 导入 / 引导取料 ----------
 
 class BomImport(BaseModel):
