@@ -95,6 +95,8 @@ npm start
    `CHIPNEST_SERIAL_PORTS=COM3,COM8` 指定。
 3. **布局缩小后元件不见了**：网格上方会出现提示条，一键搬回空格。
 4. **安装 electron 依赖慢**：国内网络设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。
+5. **误点了「清空所有数据」**：清空前会自动备份到数据目录的 `backups\` 下
+   （打包版即 `%APPDATA%\ChipNest\backups\`），里面是完整 JSON，照着手工录回即可。
 
 ## 开发与打包
 
