@@ -649,11 +649,13 @@ html.light .bin-card.has-supplier {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
   color: var(--accent-ink);
 }
+/* 封装：暖沙色（低饱和），与青/蓝/绿/雾紫并列时一眼可分 */
 .chip-pkg {
-  background: var(--surface);
-  border-color: var(--line-strong);
-  color: var(--text-dim);
+  background: color-mix(in srgb, #c2a878 13%, var(--surface));
+  border-color: color-mix(in srgb, #c2a878 32%, var(--line-strong));
+  color: color-mix(in srgb, #e2cda6 86%, var(--text-dim));
 }
+html.light .chip-pkg { color: #8a6a3c; }
 
 /* 卡片上的料号 chip */
 .chip-mpn {
