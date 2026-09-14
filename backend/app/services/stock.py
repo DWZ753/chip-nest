@@ -34,6 +34,23 @@ def _dump_fields(fields) -> str:
     return json.dumps(kept or ["value", "package"])
 
 
+def _dump_card_items(items, tags) -> str:
+    """统一顺序保存；#标签 必须仍存在于 tags（删标签即出列）。"""
+    tag_set = {str(t).strip()[:20] for t in (tags or [])}
+    kept: list[str] = []
+    for raw in items or []:
+        token = str(raw).strip()
+        if token in _CARD_FIELDS:
+            pass
+        elif token.startswith("#") and token[1:].strip()[:20] in tag_set:
+            token = "#" + token[1:].strip()[:20]
+        else:
+            continue
+        if token not in kept:
+            kept.append(token)
+    return json.dumps(kept[:24], ensure_ascii=False)
+
+
 def _dump_display_tags(tags, display, cap: int = 3) -> str:
     """展示标签必须是标签的子集：标签被删掉后，展示位同步清理。"""
     tag_set = [str(t).strip()[:20] for t in (tags or [])]
@@ -149,6 +166,7 @@ async def create_component(
     tags: list[str] | None = None,
     display_tags: list[str] | None = None,
     display_fields: list[str] | None = None,
+    card_items: list[str] | None = None,
     source: str = "ui",
 ) -> Component:
     """建档（含检索文本与审计流水），同一事务提交。"""
@@ -166,6 +184,7 @@ async def create_component(
         tags=_dump_tags(tags),
         display_tags=_dump_display_tags(tags, display_tags),
         display_fields=_dump_fields(display_fields),
+        card_items=_dump_card_items(card_items, tags),
         search_text=build_search_text(name, value or "", package or "",
                                       manufacturer_part or "", " ".join(tags or [])),
     )
@@ -214,6 +233,16 @@ async def update_component(
     if "display_fields" in patch:
         component.display_fields = _dump_fields(patch["display_fields"])
         changed.append("display_fields")
+    if "card_items" in patch:
+        component.card_items = _dump_card_items(
+            patch["card_items"], patch.get("tags", _load_tags(component.tags))
+        )
+        changed.append("card_items")
+    elif "tags" in patch:
+        # 标签被删：统一顺序里的 #token 同步清理
+        component.card_items = _dump_card_items(
+            json.loads(component.card_items or "[]"), patch["tags"]
+        )
 
     if changed:  # 名称/值/封装变动时重建检索文本
         component.search_text = build_search_text(

@@ -35,8 +35,9 @@ const form = reactive({
   layer: 1,
   slot: 0,
 })
-const tags = ref<string[]>([])
-const displayFields = ref<string[]>(['value', 'package'])
+// 统一列表：items = 显示顺序 token（字段名或 "#标签"），shownItems = 其中要显示的
+const items = ref<string[]>([])
+const shownItems = ref<string[]>([])
 const FIELD_LABELS: Record<string, string> = {
   value: '标称值',
   package: '封装',
@@ -45,15 +46,9 @@ const FIELD_LABELS: Record<string, string> = {
 }
 const FIELD_KEYS = ['value', 'package', 'mpn', 'supplier']
 
-function toggleField(key: string) {
-  const next = displayFields.value.includes(key)
-    ? displayFields.value.filter((f) => f !== key)
-    : [...displayFields.value, key]
-  displayFields.value = FIELD_KEYS.filter((f) => next.includes(f))
-}
-const displayTags = ref<string[]>([])
+const tagNames = computed(() => items.value.filter((t) => t.startsWith('#')).map((t) => t.slice(1)))
 const tagSuggestions = computed(() => {
-  const used = new Set(tags.value)
+  const used = new Set(tagNames.value)
   const pool = new Set<string>()
   for (const c of bins.components) for (const t of c.tags ?? []) pool.add(t)
   return Array.from(pool).filter((t) => !used.has(t)).slice(0, 8)
@@ -73,15 +68,25 @@ watch(
     errorMsg.value = null
     deleting.value = false
     amount.value = 1
-    if (props.comp) {
-      form.name = props.comp.name
+    const comp = props.comp
+    if (comp) {
+      form.name = comp.name
       form.value = props.comp.value ?? ''
       form.package = props.comp.package ?? ''
       form.manufacturer_part = props.comp.manufacturer_part ?? ''
       form.supplier_part = props.comp.supplier_part ?? ''
-      tags.value = [...(props.comp.tags ?? [])]
-      displayTags.value = [...(props.comp.display_tags ?? [])]
-      displayFields.value = [...(props.comp.display_fields ?? ['value', 'package'])]
+      const order = (comp.card_items ?? []).length
+        ? [...comp.card_items]
+        : [...FIELD_KEYS, ...(comp.tags ?? []).map((t) => '#' + t)]
+      for (const key of FIELD_KEYS) if (!order.includes(key)) order.unshift(key)
+      for (const tag of comp.tags ?? []) {
+        if (!order.includes('#' + tag)) order.push('#' + tag)
+      }
+      items.value = order
+      shownItems.value = [
+        ...FIELD_KEYS.filter((k) => (comp.display_fields ?? ['value', 'package']).includes(k)),
+        ...(comp.display_tags ?? []).map((t) => '#' + t),
+      ]
       form.threshold = props.comp.threshold
       form.zone = props.comp.zone
       form.layer = props.comp.layer
@@ -94,9 +99,8 @@ watch(
       form.package = ''
       form.manufacturer_part = ''
       form.supplier_part = ''
-      tags.value = []
-      displayTags.value = []
-      displayFields.value = ['value', 'package']
+      items.value = [...FIELD_KEYS]
+      shownItems.value = ['value', 'package']
       form.threshold = 5
       form.zone = p.zone
       form.layer = p.layer
@@ -147,12 +151,6 @@ function fail(e: unknown) {
   errorMsg.value = e instanceof Error ? e.message : String(e)
 }
 
-// 标签被删除时，展示位同步剔除（避免“标签没了但格子上还挂着”）
-watch(tags, (list) => {
-  const kept = displayTags.value.filter((t) => list.includes(t))
-  if (kept.length !== displayTags.value.length) displayTags.value = kept
-})
-
 async function save() {
   const name = form.name.trim()
   if (!name) { errorMsg.value = '请填写元件名称'; return }
@@ -160,15 +158,21 @@ async function save() {
   errorMsg.value = null
   try {
     if (isCreate.value) {
+      const tagList = items.value.filter((t) => t.startsWith('#')).map((t) => t.slice(1))
+      const fields = FIELD_KEYS.filter((k) => shownItems.value.includes(k))
+      const shownTags = items.value
+        .filter((t) => t.startsWith('#') && shownItems.value.includes(t))
+        .map((t) => t.slice(1))
       const created = await api.createComponent({
         name: form.name.trim(),
         value: form.value.trim() || null,
         package: form.package.trim() || null,
         manufacturer_part: form.manufacturer_part.trim() || null,
         supplier_part: form.supplier_part.trim() || null,
-        tags: [...tags.value],
-        display_tags: tags.value.filter((t) => displayTags.value.includes(t)),
-        display_fields: [...displayFields.value],
+        tags: tagList,
+        display_tags: shownTags,
+        display_fields: fields,
+        card_items: [...items.value],
         quantity: Math.max(0, initQty.value | 0),
         threshold: Math.max(0, form.threshold | 0),
         zone: form.zone, layer: form.layer, slot: form.slot,
@@ -177,15 +181,21 @@ async function save() {
       emit('close')
       return
     }
+    const tagList = items.value.filter((t) => t.startsWith('#')).map((t) => t.slice(1))
+    const fields = FIELD_KEYS.filter((k) => shownItems.value.includes(k))
+    const shownTags = items.value
+      .filter((t) => t.startsWith('#') && shownItems.value.includes(t))
+      .map((t) => t.slice(1))
     const patch: Record<string, unknown> = {
       name,
       value: form.value.trim() || null,
       package: form.package.trim() || null,
       manufacturer_part: form.manufacturer_part.trim() || null,
       supplier_part: form.supplier_part.trim() || null,
-      tags: [...tags.value],
-      display_tags: tags.value.filter((t) => displayTags.value.includes(t)),
-      display_fields: [...displayFields.value],
+      tags: tagList,
+      display_tags: shownTags,
+      display_fields: fields,
+      card_items: [...items.value],
       threshold: Math.max(0, form.threshold | 0),
     }
     const moved = form.zone !== props.comp!.zone || form.layer !== props.comp!.layer
@@ -311,21 +321,9 @@ function close() {
                   <div class="mb-2">
                     <span class="field-label !mb-0">标签与显示</span>
                   </div>
-                  <!-- 系统字段：不可删除，点一下开关是否显示 -->
-                  <div class="mb-2 flex flex-wrap gap-1.5">
-                    <button v-for="key in FIELD_KEYS" :key="key" type="button"
-                            class="chip !cursor-pointer !px-2.5 !py-1 !text-[11.5px]"
-                            :class="displayFields.includes(key) ? '' : 'opacity-45 hover:opacity-80'"
-                            :style="displayFields.includes(key)
-                              ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                            :title="'系统字段，点一下开关显示'"
-                            @click="toggleField(key)">
-                      {{ displayFields.includes(key) ? '✓ ' : '' }}{{ FIELD_LABELS[key] }}
-                    </button>
-                  </div>
-                  <!-- 自定义标签：点一下开关显示、拖动排序、× 删除 -->
-                  <TagEditor v-model="tags" v-model:shown="displayTags"
-                             :suggestions="tagSuggestions"
+                  <!-- 统一列表：字段与标签同一条链，眼睛开关显示、拖动排序、标签可删 -->
+                  <TagEditor mode="items" v-model="items" v-model:shown="shownItems"
+                             :field-labels="FIELD_LABELS" :suggestions="tagSuggestions"
                              placeholder="输入后回车添加标签" />
                 </div>
 

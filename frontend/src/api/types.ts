@@ -25,6 +25,7 @@ export interface ComponentItem {
   tags: string[]
   display_tags: string[]
   display_fields: string[]
+  card_items: string[]
 }
 
 export interface TransactionRow {

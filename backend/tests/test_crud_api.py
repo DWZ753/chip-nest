@@ -198,3 +198,22 @@ async def test_display_fields_whitelist(client):
     resp = await client.patch(f"/api/v1/components/{comp['id']}", json={"display_fields": []})
     assert resp.status_code == 200
     assert resp.json()["display_fields"] == ["value", "package"]
+
+async def test_card_items_order_and_tag_prune(client):
+    """统一显示顺序：字段与 #标签 混排可保存；删标签后 token 自动出列。"""
+    comp = await _create(client, slot=0, name="电容", value="100nF", package="0402",
+                         tags=["常用", "board"],
+                         card_items=["#常用", "value", "#board", "package"])
+    assert comp["card_items"] == ["#常用", "value", "#board", "package"]
+
+    # 非法 token 被过滤
+    resp = await client.patch(f"/api/v1/components/{comp['id']}",
+                              json={"card_items": ["#不存在", "mpn", "乱七八糟"]})
+    assert resp.status_code == 200
+    assert resp.json()["card_items"] == ["mpn"]
+
+    # 删掉标签：对应 #token 自动清理
+    resp = await client.patch(f"/api/v1/components/{comp['id']}",
+                              json={"card_items": ["#常用", "value"], "tags": ["board"]})
+    assert resp.status_code == 200
+    assert resp.json()["card_items"] == ["value"]

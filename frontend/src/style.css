@@ -608,18 +608,22 @@ html.light .bin-card.has-supplier {
 .tag-drag { cursor: grab; touch-action: none; user-select: none; }
 .tag-drag:active { cursor: grabbing; }
 .tag-dragging { opacity: 0.25; }
-.tag-drag { position: relative; }
-/* 插入位置提示：独立竖直直线（不跟着圆角弯曲） */
-.tag-drop-target::before {
-  content: '';
-  position: absolute;
-  left: -4px;
-  top: 15%;
+/* 插入位置提示：独立插槽竖线（第一个之前 / 最后一个之后都能显示） */
+.tag-insert-line {
+  flex: 0 0 auto;
+  align-self: stretch;
   width: 2px;
-  height: 70%;
+  min-height: 16px;
+  margin: 0 1px;
   border-radius: 2px;
   background: var(--accent);
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+/* 系统字段 chip：中性描边，和标签区分但不割裂 */
+.chip-field {
+  background: color-mix(in srgb, var(--text-faint) 14%, var(--surface));
+  border-color: var(--line-strong);
+  color: var(--text-dim);
 }
 .tag-float-chip {
   position: fixed;

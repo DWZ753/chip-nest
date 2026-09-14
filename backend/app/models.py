@@ -45,6 +45,8 @@ class Component(Base):
         Text, default='["value", "package"]',
         server_default='["value", "package"]',
     )
+    # 卡片显示顺序（统一列表）：字段 token 或 "#标签"；空数组=默认顺序
+    card_items: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     quantity: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     threshold: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
     zone: Mapped[int] = mapped_column(Integer)

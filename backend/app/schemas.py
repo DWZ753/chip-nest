@@ -17,6 +17,22 @@ def _clean_fields(values: list) -> list[str]:
     return kept or ["value", "package"]
 
 
+def _clean_card_items(values: list) -> list[str]:
+    """统一顺序 token：字段名（value/package/mpn/supplier）或 "#标签"。"""
+    kept: list[str] = []
+    for raw in values or []:
+        token = str(raw).strip()
+        if token in _CARD_FIELDS:
+            pass
+        elif token.startswith("#") and 1 < len(token) <= 21:
+            token = "#" + token[1:].strip()[:20]
+        else:
+            continue
+        if token not in kept:
+            kept.append(token)
+    return kept[:24]
+
+
 def _clean_tags_list(values: list, cap: int = 8) -> list[str]:
     """标签清洗：去空白、去重、截断，最多 cap 个、每个 ≤20 字符。"""
     seen: list[str] = []
@@ -84,6 +100,12 @@ class ComponentCreate(BaseModel):
     # 外部可见标签：≤3 个，通常取 tags 的子集
     display_tags: list[str] = Field(default=[], max_length=3)
     display_fields: list[str] = Field(default=["value", "package"], max_length=4)
+    card_items: list[str] = Field(default=[], max_length=24)
+
+    @field_validator("card_items")
+    @classmethod
+    def _check_card_items(cls, values):
+        return _clean_card_items(values)
 
     @field_validator("display_fields")
     @classmethod
@@ -115,6 +137,12 @@ class ComponentUpdate(BaseModel):
     tags: Optional[list[str]] = Field(default=None, max_length=8)
     display_tags: Optional[list[str]] = Field(default=None, max_length=3)
     display_fields: Optional[list[str]] = Field(default=None, max_length=4)
+    card_items: Optional[list[str]] = Field(default=None, max_length=24)
+
+    @field_validator("card_items")
+    @classmethod
+    def _check_card_items(cls, values):
+        return None if values is None else _clean_card_items(values)
 
     @field_validator("display_fields")
     @classmethod
@@ -167,8 +195,10 @@ class ComponentOut(BaseModel):
     tags: list[str] = []
     display_tags: list[str] = []
     display_fields: list[str] = ["value", "package"]
+    card_items: list[str] = []
 
-    @field_validator("tags", "display_tags", "display_fields", mode="before")
+    @field_validator("tags", "display_tags", "display_fields", "card_items",
+                     mode="before")
     @classmethod
     def _parse_tags(cls, value):
         """ORM 层存的是 JSON 文本，转回列表。"""
