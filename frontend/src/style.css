@@ -639,6 +639,19 @@ html.light .bin-card.has-supplier {
   padding: 2px 6px;
   box-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.65);
 }
+/* 卡片 chip 配色语义：
+   标称值=主色（青）｜封装=中性（灰）｜厂商料号=蓝｜供应商料号=绿｜自定义标签=紫 */
+.chip-value {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  color: var(--accent-ink);
+}
+.chip-pkg {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--text-dim);
+}
+
 /* 卡片上的料号 chip */
 .chip-mpn {
   background: color-mix(in srgb, var(--info) 12%, var(--surface));

@@ -81,7 +81,7 @@ const measureEl = ref<HTMLElement | null>(null)
 const visibleFlags = ref<boolean[]>([])
 let observer: ResizeObserver | null = null
 
-const MAX_ROWS = 3            // 字段优先：最多三行保证字段可见
+const MAX_ROWS = 2            // 显示链最多两行，放不下的统一折叠为 +N
 const GAP = 3
 
 function recompute() {
@@ -98,38 +98,33 @@ function recompute() {
   const widths = nodes.slice(0, list.length).map((n) => n.getBoundingClientRect().width)
   const plusW = nodes[list.length].getBoundingClientRect().width + GAP
 
-  // 逐行贪心：字段必须放下（可换行），标签放不下则折叠
+  // 逐行贪心（两行上限）：字段与标签一视同仁，放不下就折叠
   const flags = list.map(() => false)
   let rows = 1
   let used = 0
-  let hiddenTags = 0
-  list.forEach((chip, i) => {
+  list.forEach((_chip, i) => {
     const need = widths[i] + (used > 0 ? GAP : 0)
     if (used + need <= width) {
       flags[i] = true
       used += need
       return
     }
-    if (chip.kind === 'field') {
-      if (rows < MAX_ROWS) { rows += 1; used = widths[i]; flags[i] = true; return }
-      used += need            // 极端情况：字段也硬放（宁可挤一行）
+    if (rows < MAX_ROWS) {
+      rows += 1
+      used = widths[i]
       flags[i] = true
-      return
     }
-    hiddenTags += 1           // 标签：放不下就折叠
   })
 
-  // +N 本身要放得进：放不进且还有标签时，继续折叠一个
-  while (hiddenTags > 0) {
-    const remain = width - used
-    if (remain >= plusW || used === 0) break
-    const lastTag = [...list].reverse().findIndex((c, idx) =>
-      c.kind === 'tag' && flags[list.length - 1 - idx])
-    if (lastTag < 0) break
-    const realIdx = list.length - 1 - lastTag
-    flags[realIdx] = false
-    used = Math.max(0, used - widths[realIdx] - GAP)
-    hiddenTags += 1
+  // 保证 +N 自身放得进最后一行：不够就再折一个
+  let hidden = flags.filter((f) => !f).length
+  while (hidden > 0 && used > 0 && width - used < plusW) {
+    let last = -1
+    for (let i = flags.length - 1; i >= 0; i -= 1) if (flags[i]) { last = i; break }
+    if (last < 0) break
+    flags[last] = false
+    used = Math.max(0, used - widths[last] - GAP)
+    hidden += 1
   }
   visibleFlags.value = flags
 }
