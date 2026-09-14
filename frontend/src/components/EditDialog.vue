@@ -8,6 +8,7 @@ import { Minus, Pencil, Plus, Trash2, X } from '@lucide/vue'
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig } from '../api/types'
 import { useBinsStore, zoneGrid, type BinPosition } from '../stores/bins'
+import { ArrowLeftRight } from '@lucide/vue'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
@@ -38,6 +39,7 @@ const form = reactive({
 // 统一列表：items = 显示顺序 token（字段名或 "#标签"），shownItems = 其中要显示的
 const items = ref<string[]>([])
 const shownItems = ref<string[]>([])
+const adjustMode = ref(false)
 const FIELD_LABELS: Record<string, string> = {
   value: '标称值',
   package: '封装',
@@ -67,6 +69,7 @@ watch(
     if (!props.open) return
     errorMsg.value = null
     deleting.value = false
+    adjustMode.value = false
     amount.value = 1
     const comp = props.comp
     if (comp) {
@@ -318,11 +321,19 @@ function close() {
 
                 <div class="rounded-xl px-3 py-2.5"
                      style="background: var(--panel); border: 1px solid var(--line)">
-                  <div class="mb-2">
+                  <div class="mb-2 flex items-center gap-2">
                     <span class="field-label !mb-0">标签与显示</span>
+                    <button type="button" class="btn ml-auto !px-2.5 !py-1 text-[11.5px]"
+                            :class="adjustMode ? 'btn-primary' : ''"
+                            :title="adjustMode ? '完成排序' : '进入排序状态'"
+                            @click="adjustMode = !adjustMode">
+                      <ArrowLeftRight :size="12" />
+                      {{ adjustMode ? '完成调整' : '调整顺序' }}
+                    </button>
                   </div>
-                  <!-- 统一列表：字段与标签同一条链，眼睛开关显示、拖动排序、标签可删 -->
+                  <!-- 状态1（默认）：点按切换是否显示；状态2：只拖拽调整顺序 -->
                   <TagEditor mode="items" v-model="items" v-model:shown="shownItems"
+                             :adjust="adjustMode"
                              :field-labels="FIELD_LABELS" :suggestions="tagSuggestions"
                              placeholder="输入后回车添加标签" />
                 </div>

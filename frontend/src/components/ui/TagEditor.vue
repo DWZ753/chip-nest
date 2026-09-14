@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Eye, EyeOff, Plus, X } from '@lucide/vue'
+import { Plus, X } from '@lucide/vue'
 
 // 统一 chip 列表编辑器：系统字段（value/package/mpn/supplier）与自定义标签（#name）
 // 在同一条可拖动列表里；每项都有眼睛开关控制是否显示在格子上，标签额外可删除。
@@ -12,6 +12,8 @@ const props = withDefaults(defineProps<{
   suggestions?: string[]
   placeholder?: string
   compact?: boolean
+  /** true=调整顺序（只拖拽）；false=点按切换是否显示 */
+  adjust?: boolean
 }>(), {
   mode: 'tags',
   shown: () => [],
@@ -19,6 +21,7 @@ const props = withDefaults(defineProps<{
   suggestions: () => [],
   placeholder: '输入后回车添加',
   compact: false,
+  adjust: false,
 })
 
 const emit = defineEmits<{
@@ -50,6 +53,10 @@ function emitShownTokens(next: string[]) {
     : next)
 }
 
+const canDrag = computed(() => props.adjust || props.mode === 'tags')
+const canToggle = computed(() => props.mode === 'items' && !props.adjust)
+const showDelete = computed(() => !props.adjust)
+
 const isTag = (token: string) => token.startsWith('#')
 const tagName = (token: string) => token.replace(/^#/, '')
 const labelOf = (token: string) => isTag(token)
@@ -65,6 +72,10 @@ function toggleShown(token: string) {
   }
   if (isTag(token) && shown.filter(isTag).length >= 3) return  // 标签最多显示 3 个
   emitShownTokens([...shown, token])
+}
+
+function onChipClick(token: string) {
+  if (canToggle.value) toggleShown(token)
 }
 
 function removeToken(token: string) {
@@ -127,7 +138,7 @@ function chipNodes(): HTMLElement[] {
 }
 
 function startDrag(index: number, ev: PointerEvent) {
-  if (ev.button !== 0) return
+  if (ev.button !== 0 || !canDrag.value) return
   const el = ev.currentTarget as HTMLElement
   const r = el.getBoundingClientRect()
   drag.value = {
@@ -182,25 +193,23 @@ function endDrag() {
 <template>
   <div class="relative">
     <div ref="listEl" class="tag-editor cursor-text rounded-[10px] border"
-         :class="compact ? '!rounded-lg !px-1.5 !py-0.5' : ''"
+         :class="[compact ? '!rounded-lg !px-1.5 !py-0.5' : '', adjust ? 'adjusting' : '']"
          style="border-color: var(--line-strong); background: rgba(255,255,255,.035)"
          @click="focusInput">
       <template v-for="(token, i) in tokens" :key="token">
         <span v-if="dropSlot === i" class="tag-insert-line" />
         <span data-chip
-              class="chip tag-drag !px-1.5 !text-[10.5px] !py-0.5"
+              class="chip !px-1.5 !text-[10.5px] !py-0.5"
               :class="[isTag(token) ? 'chip-tag' : 'chip-field',
-                       { 'tag-dragging': drag && drag.from === i }]"
-              :title="isTag(token) ? '拖动排序；眼睛控制显示；× 删除' : '系统字段：拖动排序，眼睛控制显示'"
+                       shownTokens.includes(token) ? 'chip-on' : 'chip-off',
+                       { 'tag-drag': canDrag, 'tag-pick': canToggle,
+                         'tag-dragging': drag && drag.from === i }]"
+              @click="onChipClick(token)"
+              :title="adjust ? '拖动调整顺序' : (isTag(token) ? '点按切换显示；× 删除' : '点按切换是否显示')"
               @pointerdown="startDrag(i, $event)">
-          <button type="button" class="tag-eye"
-                  :title="shownTokens.includes(token) ? '在格子上显示：开' : '在格子上显示：关'"
-                  @pointerdown.stop @click.stop="toggleShown(token)">
-            <Eye v-if="shownTokens.includes(token)" :size="10" />
-            <EyeOff v-else :size="10" />
-          </button>
           <span class="tag-name">{{ labelOf(token) }}</span>
-          <button v-if="isTag(token)" type="button" class="tag-chip-x" :title="'删除 ' + tagName(token)"
+          <button v-if="isTag(token) && showDelete" type="button" class="tag-chip-x"
+                  :title="'删除 ' + tagName(token)"
                   @pointerdown.stop @click.stop="removeToken(token)">
             <X :size="10" />
           </button>

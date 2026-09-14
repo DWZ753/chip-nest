@@ -36,9 +36,17 @@ function fieldText(key: string): string {
 
 // 统一顺序：card_items 里字段与 "#标签" 混排；缺省时字段在前、标签在后
 const orderTokens = computed<string[]>(() => {
-  const custom = props.comp.card_items ?? []
-  if (custom.length) return custom
-  return [...FIELD_ORDER, ...(props.comp.tags ?? []).map((t) => '#' + t)]
+  const stored = [...(props.comp.card_items ?? [])]
+  const tokens = stored.length
+    ? stored
+    : [...FIELD_ORDER, ...(props.comp.tags ?? []).map((t) => '#' + t)]
+  // 兜底：可见字段/标签即使不在顺序表里也要显示（老数据/部分保存）
+  const missingFields = FIELD_ORDER.filter((k) => !tokens.includes(k)
+    && (props.comp.display_fields ?? ['value', 'package']).includes(k))
+  const missingTags = (props.comp.tags ?? [])
+    .map((t) => '#' + t)
+    .filter((token) => !tokens.includes(token))
+  return [...missingFields, ...tokens, ...missingTags]
 })
 
 interface Chip { token: string; kind: 'field' | 'tag'; key: string; text: string }

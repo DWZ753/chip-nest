@@ -654,21 +654,15 @@ html.light .bin-card.has-supplier {
   border-color: color-mix(in srgb, var(--success) 38%, var(--line-strong));
   color: color-mix(in srgb, var(--success) 80%, var(--text-dim));
 }
-/* 标签 chip：眼睛开关（显示与否）+ 名称 + 删除 */
-.tag-eye {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  opacity: 0.75;
-  cursor: pointer;
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
-}
-.tag-eye:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
-.chip-tag:has(.tag-eye) { gap: 3px; }
-.tag-eye + .tag-name { font-weight: 700; }
+/* 点按模式：chip 可点切换显示；关闭态半透明 */
+.tag-pick { cursor: pointer; }
+.tag-pick:hover { filter: brightness(1.15); }
+.chip-off { opacity: 0.4; }
+.chip-on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+/* 调整模式：整块虚线提示 + 抓手光标 */
+.tag-editor.adjusting { border-style: dashed; }
+.tag-editor.adjusting .tag-drag { cursor: grab; }
+.tag-editor.adjusting .tag-drag:active { cursor: grabbing; }
 /* 标签自适应：离屏测量层（不占位、不可见） */
 .tag-measure {
   position: absolute;
