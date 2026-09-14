@@ -1,3 +1,5 @@
+<img src="docs/app-icon.png" alt="ChipNest" width="88" align="right" />
+
 # ChipNest · 智能元件管家
 
 面向电子工程师的桌面元件仓库工具：用卡片网格管理你的元件库，支持模糊搜索、BOM 导入与引导取料，
@@ -39,7 +41,7 @@
 
 - 运行 `electron/release/ChipNest-Setup-<版本>.exe`，按向导安装；
   数据保存在 `%APPDATA%/ChipNest/`，升级安装不会丢失。
-- 当前正式版：**v1.0.0**（界面左上角与「设置 → 版本」可核对）。
+- 当前正式版：**v1.0.1**（界面左上角与「设置 → 版本」可核对）。
 - 首次运行若提示 SmartScreen，选择“更多信息 → 仍要运行”（安装包暂未签名）。
 
 ### 源码运行

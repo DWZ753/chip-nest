@@ -126,7 +126,9 @@ async function createWindow() {
     minWidth: 1080,
     minHeight: 720,
     autoHideMenuBar: true,
-    backgroundColor: '#1f1c19',
+    backgroundColor: '#0d1118',
+    // 开发态用仓库内图标；打包态由 electron-builder 写入 exe 图标
+    ...(app.isPackaged ? {} : { icon: path.join(__dirname, 'build', 'icon.ico') }),
     title: `ChipNest v${app.getVersion()} · 智能元件管家`,
     webPreferences: {
       contextIsolation: true,
