@@ -81,6 +81,34 @@ const measureEl = ref<HTMLElement | null>(null)
 const visibleCount = ref(0)
 let observer: ResizeObserver | null = null
 
+const MAX_ROWS = 2
+const GAP = 3
+
+function rowsNeeded(widths: number[], count: number, width: number): number {
+  let rows = 1
+  let used = 0
+  for (let i = 0; i < count; i += 1) {
+    const need = widths[i] + (i ? GAP : 0)
+    if (used + need <= width) { used += need; continue }
+    rows += 1
+    used = widths[i]
+    if (rows > MAX_ROWS) return rows
+  }
+  return rows
+}
+
+function lastRowRemain(widths: number[], count: number, width: number): number {
+  let rows = 1
+  let used = 0
+  for (let i = 0; i < count; i += 1) {
+    const need = widths[i] + (i ? GAP : 0)
+    if (used + need <= width) { used += need; continue }
+    rows += 1
+    used = widths[i]
+  }
+  return rows > MAX_ROWS ? -1 : width - used
+}
+
 function recompute() {
   const list = chips.value
   const row = chipsRow.value
@@ -89,16 +117,19 @@ function recompute() {
   const width = row?.clientWidth ?? 0
   const nodes = Array.from(box?.children ?? []) as HTMLElement[]
   if (!width || nodes.length < list.length + 1) { visibleCount.value = list.length; return }
-  const widths = nodes.slice(0, list.length).map((n) => n.getBoundingClientRect().width + 4)
-  const plusW = nodes[list.length].getBoundingClientRect().width + 4
-  let used = 0
-  let count = 0
-  for (let i = 0; i < list.length; i += 1) {
-    const rest = list.length - i - 1
-    const need = widths[i] + (rest > 0 ? plusW : 0)
-    if (used + need <= width || count === 0) { used += widths[i]; count += 1 } else break
+  const widths = nodes.slice(0, list.length).map((n) => n.getBoundingClientRect().width)
+  const plusW = nodes[list.length].getBoundingClientRect().width + GAP
+  // 尽量多放：从全部开始回退，直到「前 count 个 + +N」能在 MAX_ROWS 行内放下
+  let count = list.length
+  while (count > 0) {
+    const hidden = list.length - count
+    if (rowsNeeded(widths, count, width) <= MAX_ROWS) {
+      if (hidden === 0) break
+      if (lastRowRemain(widths, count, width) >= plusW) break
+    }
+    count -= 1
   }
-  visibleCount.value = count
+  visibleCount.value = Math.max(1, count)
 }
 
 onMounted(async () => {
@@ -163,13 +194,13 @@ const title = computed(() => {
     </div>
 
     <!-- 统一显示链：字段与标签同一序列，单行自适应，放不下折叠为 +N -->
-    <div v-if="chips.length" ref="chipsRow" class="mt-1 flex items-center gap-1 overflow-hidden whitespace-nowrap">
+    <div v-if="chips.length" ref="chipsRow" class="chips-row mt-0.5 flex flex-wrap items-center overflow-hidden">
       <span v-for="chip in visibleChips" :key="chip.token"
-            class="chip !px-1.5 !text-[9.5px]" :class="chipClass(chip)"
+            class="chip !px-1.5 !text-[9.5px] chip-cell" :class="chipClass(chip)"
             :title="chip.kind === 'field' ? FIELD_LABEL[chip.key] + ' ' + chip.text : chip.text">
         {{ chip.text }}
       </span>
-      <span v-if="hiddenCount > 0" class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
+      <span v-if="hiddenCount > 0" class="chip chip-tag-show mono chip-cell !px-1 !text-[8.5px] font-bold"
             :title="hiddenText">+{{ hiddenCount }}</span>
     </div>
 

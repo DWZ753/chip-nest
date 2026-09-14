@@ -676,3 +676,14 @@ html.light .bin-card.has-supplier {
 }
 /* 标签行不换行，确保不会压到状态条 */
 .bin-card .tag-row { flex: 0 0 auto; }
+/* 添加标签按钮：虚线小胶囊 */
+.tag-add-btn {
+  border-style: dashed;
+  color: var(--text-faint);
+  cursor: pointer;
+  gap: 2px;
+}
+.tag-add-btn:hover { color: var(--accent); border-color: var(--accent); }
+/* 卡片显示链：最多两行，行距收紧 */
+.chips-row { gap: 3px; row-gap: 2px; align-content: flex-start; }
+.chips-row .chip-cell { flex: 0 0 auto; }

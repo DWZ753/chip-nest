@@ -33,6 +33,7 @@ const draft = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 const listEl = ref<HTMLElement | null>(null)
 const focusOpen = ref(false)
+const adding = ref(false)
 
 // ---------- token 与外部值的互转 ----------
 const tokens = computed<string[]>(() => props.mode === 'tags'
@@ -102,6 +103,11 @@ function onKeydown(ev: KeyboardEvent) {
     addTag(draft.value)
     return
   }
+  if (ev.key === 'Escape') {
+    ev.preventDefault()
+    closeAdd()
+    return
+  }
   if (ev.key === 'Backspace' && !draft.value) {
     const lastTag = [...tokens.value].reverse().find(isTag)
     if (lastTag) removeToken(lastTag)
@@ -116,13 +122,26 @@ const suggestionList = computed(() => {
 })
 
 function focusInput() {
+  if (!adding.value) return
   nextTick(() => inputEl.value?.focus())
+}
+
+function openAdd() {
+  adding.value = true
+  focusOpen.value = true
+  nextTick(() => inputEl.value?.focus())
+}
+
+function closeAdd() {
+  adding.value = false
+  focusOpen.value = false
+  draft.value = ''
 }
 
 function handleBlur() {
   window.setTimeout(() => {
-    focusOpen.value = false
     if (draft.value.trim()) addTag(draft.value)
+    closeAdd()
   }, 120)
 }
 
@@ -216,8 +235,16 @@ function endDrag() {
         </span>
       </template>
       <span v-if="dropSlot === tokens.length" class="tag-insert-line" />
-      <input ref="inputEl" v-model="draft" class="tag-input"
-             :placeholder="tokens.length ? '' : placeholder"
+      <button v-if="!adjust" type="button" class="chip tag-add-btn !px-1.5 !py-0.5"
+              title="添加标签" @click.stop="openAdd">
+        <Plus :size="11" /> 添加
+      </button>
+    </div>
+
+    <!-- 添加标签：独立输入区（不挤在标签行里） -->
+    <div v-if="adding" class="mt-1.5">
+      <input ref="inputEl" v-model="draft" class="input !py-1.5 text-[12.5px]"
+             :placeholder="placeholder"
              @keydown="onKeydown" @focus="focusOpen = true" @blur="handleBlur" />
     </div>
 
