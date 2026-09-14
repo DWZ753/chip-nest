@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Plus, X } from '@lucide/vue'
+import { Eye, EyeOff, Plus, X } from '@lucide/vue'
 
 // 多标签输入 + 跟手悬浮拖拽排序（Pointer Events 实现，不依赖 HTML5 drag 的默认幽灵图）
 const props = withDefaults(defineProps<{
@@ -34,8 +34,8 @@ interface DragState {
   w: number
   x: number
   y: number
-  startLeft: number
-  startTop: number
+  startX: number
+  startY: number
 }
 const drag = ref<DragState | null>(null)
 const dropIndex = ref(-1)
@@ -58,8 +58,8 @@ function startDrag(index: number, ev: PointerEvent) {
     w: r.width,
     x: ev.clientX,
     y: ev.clientY,
-    startLeft: r.left,
-    startTop: r.top,
+    startX: ev.clientX,
+    startY: ev.clientY,
   }
   dropIndex.value = index
   moved.value = false
@@ -74,10 +74,9 @@ function onMove(ev: PointerEvent) {
   if (!d) return
   d.x = ev.clientX
   d.y = ev.clientY
-  if (!moved.value) {
-    const dx = (d.x - d.dx) - d.startLeft
-    const dy = (d.y - d.dy) - d.startTop
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.value = true
+  if (!moved.value
+      && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) > 4) {
+    moved.value = true          // 超过 4px 才算拖动，避免点击被误判
   }
   const rects = chipRects()
   let best = d.from
@@ -99,11 +98,7 @@ function endDrag() {
   drag.value = null
   dropIndex.value = -1
   moved.value = false
-  if (!d) return
-  if (!wasMoved) {            // 只是点了一下 → 切换“是否显示在格子上”
-    toggleShown(d.label)
-    return
-  }
+  if (!d || !wasMoved) return
   if (to < 0 || to === d.from) return
   const list = [...chips.value]
   const [item] = list.splice(d.from, 1)
@@ -182,9 +177,14 @@ function toggleShown(tag: string) {
             class="chip chip-tag tag-drag !px-1.5 !text-[10.5px] !py-0.5"
             :class="{ 'tag-dragging': drag && drag.from === i,
                       'tag-drop-target': dropIndex === i && drag && drag.from !== i }"
-            :title="'点击开关显示，拖动排序：' + tag"
+            :title="'拖动可排序：' + tag"
             @pointerdown="startDrag(i, $event)">
-        <span class="tag-shown-mark">{{ shown.includes(tag) ? '✓' : ' ' }}</span>#{{ tag }}
+        <button type="button" class="tag-eye" :title="shown.includes(tag) ? '在格子上显示：开' : '在格子上显示：关'"
+                @pointerdown.stop @click.stop="toggleShown(tag)">
+          <Eye v-if="shown.includes(tag)" :size="10" />
+          <EyeOff v-else :size="10" />
+        </button>
+        <span class="tag-name">#{{ tag }}</span>
         <button type="button" class="tag-chip-x" :title="'删除 ' + tag"
                 @pointerdown.stop @click.stop="removeTag(tag)">
           <X :size="10" />

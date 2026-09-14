@@ -153,12 +153,6 @@ watch(tags, (list) => {
   if (kept.length !== displayTags.value.length) displayTags.value = kept
 })
 
-// 恢复默认：不显示自定义标签，系统字段回到标称值+封装
-function resetDisplay() {
-  displayTags.value = []
-  displayFields.value = ['value', 'package']
-}
-
 async function save() {
   const name = form.name.trim()
   if (!name) { errorMsg.value = '请填写元件名称'; return }
@@ -314,10 +308,8 @@ function close() {
 
                 <div class="rounded-xl px-3 py-2.5"
                      style="background: var(--panel); border: 1px solid var(--line)">
-                  <div class="mb-2 flex items-center gap-2">
+                  <div class="mb-2">
                     <span class="field-label !mb-0">标签与显示</span>
-                    <button type="button" class="text-[11px] hover:underline"
-                            style="color: var(--text-faint)" @click="resetDisplay">恢复默认</button>
                   </div>
                   <!-- 系统字段：不可删除，点一下开关是否显示 -->
                   <div class="mb-2 flex flex-wrap gap-1.5">

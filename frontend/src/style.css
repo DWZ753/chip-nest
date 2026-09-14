@@ -650,10 +650,31 @@ html.light .bin-card.has-supplier {
   border-color: color-mix(in srgb, var(--success) 38%, var(--line-strong));
   color: color-mix(in srgb, var(--success) 80%, var(--text-dim));
 }
-/* 标签 chip 的“显示中”标记：固定宽度避免抖动 */
-.tag-shown-mark {
-  display: inline-block;
-  width: 10px;
-  text-align: center;
-  opacity: 0.85;
+/* 标签 chip：眼睛开关（显示与否）+ 名称 + 删除 */
+.tag-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
+.tag-eye:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+.chip-tag:has(.tag-eye) { gap: 3px; }
+.tag-eye + .tag-name { font-weight: 700; }
+/* 标签自适应：离屏测量层（不占位、不可见） */
+.tag-measure {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+/* 标签行不换行，确保不会压到状态条 */
+.bin-card .tag-row { flex: 0 0 auto; }

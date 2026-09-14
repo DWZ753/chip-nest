@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { ComponentItem } from '../api/types'
 
@@ -39,6 +39,59 @@ const cardTags = computed<string[]>(() => {
   return props.comp.tags ?? []
 })
 const show = (name: string) => fields.value.includes(name)
+
+// ---------- 标签自适应：按行内实际可用宽度决定显示几个，其余折叠为 +N ----------
+const tagsRow = ref<HTMLElement | null>(null)
+const measureEl = ref<HTMLElement | null>(null)
+const visibleTags = ref<string[]>([])
+const hiddenCount = ref(0)
+let observer: ResizeObserver | null = null
+
+function recomputeTags() {
+  const all = cardTags.value
+  const row = tagsRow.value
+  const box = measureEl.value
+  if (!row || !box) return
+  const width = row.clientWidth
+  const nodes = Array.from(box.children) as HTMLElement[]
+  if (!all.length || !width || nodes.length < all.length + 1) {
+    visibleTags.value = all
+    hiddenCount.value = 0
+    return
+  }
+  const chipW = nodes.slice(0, all.length).map((n) => n.getBoundingClientRect().width + 4)
+  const plusW = nodes[all.length].getBoundingClientRect().width + 4
+  const chosen: string[] = []
+  let used = 0
+  for (let i = 0; i < all.length; i += 1) {
+    const rest = all.length - i - 1
+    const need = chipW[i] + (rest > 0 ? plusW : 0)
+    if (used + need <= width || chosen.length === 0) {
+      chosen.push(all[i])
+      used += chipW[i]
+    } else {
+      break
+    }
+  }
+  visibleTags.value = chosen
+  hiddenCount.value = all.length - chosen.length
+}
+
+onMounted(async () => {
+  await nextTick()
+  recomputeTags()
+  if (typeof ResizeObserver !== 'undefined' && tagsRow.value) {
+    observer = new ResizeObserver(() => recomputeTags())
+    observer.observe(tagsRow.value)
+  }
+})
+
+onBeforeUnmount(() => observer?.disconnect())
+
+watch(cardTags, async () => {
+  await nextTick()
+  recomputeTags()
+})
 
 const title = computed(() => {
   const base = [props.comp.name, props.comp.value, props.comp.package].filter(Boolean)
@@ -101,14 +154,22 @@ const title = computed(() => {
       >{{ comp.supplier_part }}</span>
     </div>
 
-    <!-- 显示标签：最多 3 个（超出才折叠为 +N）；未挑选时自动展示全部标签 -->
-    <div v-if="cardTags.length" class="mt-1 flex flex-wrap items-center gap-1">
-      <span v-for="tag in cardTags.slice(0, 3)" :key="tag"
+    <!-- 显示标签：单行自适应，放不下的折叠为 +N（不换行、不压到状态条） -->
+    <div v-if="cardTags.length" ref="tagsRow"
+         class="mt-1 flex items-center gap-1 overflow-hidden whitespace-nowrap">
+      <span v-for="tag in visibleTags" :key="tag"
             class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold"
             :title="tag">#{{ tag }}</span>
-      <span v-if="cardTags.length > 3"
+      <span v-if="hiddenCount > 0"
             class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold"
-            :title="cardTags.join('、')">+{{ cardTags.length - 3 }}</span>
+            :title="cardTags.join('、')">+{{ hiddenCount }}</span>
+    </div>
+
+    <!-- 隐藏测量层：用真实渲染宽度决定能放几个标签 -->
+    <div ref="measureEl" class="tag-measure" aria-hidden="true">
+      <span v-for="tag in cardTags" :key="'m-' + tag"
+            class="chip chip-tag-show mono !px-1.5 !text-[9.5px] font-bold">#{{ tag }}</span>
+      <span class="chip chip-tag-show mono !px-1 !text-[8.5px] font-bold">+99</span>
     </div>
 
     <div class="flex-1" />
