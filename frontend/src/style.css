@@ -393,6 +393,24 @@ html.light .chip-tag { color: #5a5ecb; }
 .card-empty svg { opacity: 0; transform: scale(0.85); transition: opacity 0.2s, transform 0.2s; }
 .card-empty:hover svg { opacity: 0.9; transform: scale(1); }
 
+/* 拖动搬家：所有空位轻微提示可放，指针所在的那个高亮 */
+.card-empty.drop-ready {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  background: var(--accent-dim);
+}
+.card-empty.drop-ready svg { opacity: 0.6; transform: scale(1); }
+.card-empty.drop-target {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-dim-2);
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 30px rgba(76, 195, 240, 0.12), var(--glow-primary);
+}
+.card-empty.drop-target svg { opacity: 1; transform: scale(1.08); }
+/* 被拖起的那张卡：半透明，一眼看出搬的是谁 */
+.bin-card.card-dragging { opacity: 0.45; }
+
 /* 底部库存色带：轨道常显 + 填充三态；缺货满格脉冲告急 */
 .band-track {
   height: 3px;

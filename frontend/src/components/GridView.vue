@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
+import { Check, Move, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { ComponentItem } from '../api/types'
@@ -131,6 +131,67 @@ async function deleteSelected() {
 
 const bins = useBinsStore()
 
+// ---------- 拖动搬家：把格子拖到虚线空格 ----------
+const dragComp = ref<ComponentItem | null>(null)  // 正在拖的元件
+const dropKey = ref<string | null>(null)          // 当前悬停的空位
+const moveNote = ref<string | null>(null)         // 搬家结果提示
+let noteTimer: ReturnType<typeof setTimeout> | undefined
+
+function flashNote(text: string) {
+  moveNote.value = text
+  window.clearTimeout(noteTimer)
+  noteTimer = window.setTimeout(() => { moveNote.value = null }, 4500)
+}
+
+// 与操作流水、引导条一致的口径：区/层/格（格从 0 起）
+function posText(pos: BinPosition): string {
+  return `${pos.zone}区/${pos.layer}层/${pos.slot}格`
+}
+
+function onDragStart(ev: DragEvent, comp: ComponentItem) {
+  if (batchMode.value) {  // 多选模式下点击是选中，别误拖
+    ev.preventDefault()
+    return
+  }
+  dragComp.value = comp
+  moveNote.value = null
+  if (ev.dataTransfer) {
+    ev.dataTransfer.effectAllowed = 'move'
+    ev.dataTransfer.setData('text/plain', String(comp.id))
+  }
+}
+
+function onDragEnd() {
+  dragComp.value = null
+  dropKey.value = null
+}
+
+function onDragOver(pos: BinPosition, ev: DragEvent) {
+  if (!dragComp.value) return
+  ev.preventDefault()  // 只有 preventDefault 才允许放下
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+  dropKey.value = positionKey(pos)
+}
+
+function onDragLeave(pos: BinPosition) {
+  if (dropKey.value === positionKey(pos)) dropKey.value = null
+}
+
+async function onDrop(pos: BinPosition) {
+  const comp = dragComp.value
+  dragComp.value = null
+  dropKey.value = null
+  if (!comp) return
+  const from = { zone: comp.zone, layer: comp.layer, slot: comp.slot }
+  if (positionKey(from) === positionKey(pos)) return
+  try {
+    await bins.moveComponent(comp.id, pos)
+    flashNote(`已把「${comp.name}」从 ${posText(from)} 搬到 ${posText(pos)}`)
+  } catch (e) {
+    flashNote(`搬家失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 function zoneCells(zone: number): number {
   const [rows, cols] = zoneGrid(bins.layout, zone)
   return rows * cols
@@ -172,9 +233,36 @@ async function fixOrphans() {
         </button>
         <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
       </template>
-      <button v-else class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
-        ☑ 多选
-      </button>
+      <template v-else>
+        <span class="text-[11.5px]" style="color: var(--text-faint)">按住格子拖到虚线空格即可搬家</span>
+        <button class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
+          ☑ 多选
+        </button>
+      </template>
+    </div>
+
+    <!-- 搬家进行中：提示可放下的位置 -->
+    <div
+      v-if="dragComp"
+      class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
+      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
+    >
+      <Move :size="16" style="color: var(--accent)" />
+      <span class="text-[13px] font-semibold">
+        正在搬「{{ dragComp.name }}」（{{ posText({ zone: dragComp.zone, layer: dragComp.layer, slot: dragComp.slot }) }}）
+      </span>
+      <span class="text-[12px]" style="color: var(--text-dim)">松手放到虚线空位即可，按 Esc 放弃</span>
+    </div>
+
+    <!-- 搬家结果提示 -->
+    <div
+      v-else-if="moveNote"
+      class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
+      style="border-color: color-mix(in srgb, var(--accent) 45%, var(--line))"
+    >
+      <Check :size="16" style="color: var(--success)" />
+      <span class="text-[13px]">{{ moveNote }}</span>
+      <button class="icon-btn ml-auto !h-7 !w-7" title="关闭" @click="moveNote = null"><X :size="13" /></button>
     </div>
 
     <!-- 游离元件提示：布局缩容后超出网格 -->
@@ -266,14 +354,24 @@ async function fixOrphans() {
                 :selectable="batchMode"
                 :selected="batchMode && selectedIds.has(compAt({ zone, layer, slot: slot - 1 })!.id)"
                 :show-supplier="batchMode"
+                :draggable="!batchMode"
                 @click="onCard($event)"
+                @dragstart="onDragStart($event, compAt({ zone, layer, slot: slot - 1 })!)"
+                @dragend="onDragEnd"
               />
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
                 v-else
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
-                title="空位：点击新建元件"
+                :class="{
+                  'drop-ready': !!dragComp,
+                  'drop-target': !!dragComp && dropKey === positionKey({ zone, layer, slot: slot - 1 }),
+                }"
+                :title="dragComp ? '放这里：把元件搬到这个空位' : '空位：点击新建元件'"
                 @click="emit('create', { zone, layer, slot: slot - 1 })"
+                @dragover="onDragOver({ zone, layer, slot: slot - 1 }, $event)"
+                @dragleave="onDragLeave({ zone, layer, slot: slot - 1 })"
+                @drop.prevent="onDrop({ zone, layer, slot: slot - 1 })"
               >
                 <Plus :size="20" />
               </button>

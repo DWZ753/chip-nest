@@ -144,6 +144,19 @@ export const useBinsStore = defineStore('bins', () => {
     else components.value.push(comp)
   }
 
+  // 拖动搬家：PATCH 三字段成组；目标被占后端返回 409（错误信息原样抛出）
+  async function moveComponent(id: number, pos: BinPosition) {
+    const comp = components.value.find((c) => c.id === id)
+    if (comp && comp.zone === pos.zone && comp.layer === pos.layer && comp.slot === pos.slot) {
+      return comp
+    }
+    const updated = await api.patchComponent(id, {
+      zone: pos.zone, layer: pos.layer, slot: pos.slot,
+    })
+    upsert(updated)
+    return updated
+  }
+
   async function removeComponent(id: number) {
     await api.deleteComponent(id)
     components.value = components.value.filter((c) => c.id !== id)
@@ -200,7 +213,7 @@ export const useBinsStore = defineStore('bins', () => {
     compsByKey, orphanComps,
     refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
     updateZoneName,
-    removeComponent, adjustStock, relocateOrphans, setGuidePosition,
+    moveComponent, removeComponent, adjustStock, relocateOrphans, setGuidePosition,
     resetAfterWipe,
   }
 })
