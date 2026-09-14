@@ -5,6 +5,10 @@
 面向电子工程师的桌面元件仓库工具：用卡片网格管理你的元件库，支持模糊搜索、BOM 导入与引导取料，
 可接 ESP32 + NeoPixel 灯带做槽位指示。Windows 安装包即装即用，无需 Python。
 
+[![最新版本](https://img.shields.io/github/v/release/DWZ753/chip-nest?color=22d3ee&label=release)](https://github.com/DWZ753/chip-nest/releases/latest)
+![平台](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-4c8bf5)
+![许可证](https://img.shields.io/badge/license-MIT-67b98c)
+
 ## 界面预览
 
 **主界面** —— 分区网格、格子上的字段与标签、底部库存状态色带：
@@ -39,9 +43,11 @@
 
 ### Windows
 
-- 运行 `electron/release/ChipNest-Setup-<版本>.exe`，按向导安装；
+- 下载安装包：**[Releases 页面](https://github.com/DWZ753/chip-nest/releases/latest)**
+  （附件 `ChipNest-Setup-<版本>.exe`；本地构建产物在 `electron/release/`），按向导安装；
   数据保存在 `%APPDATA%/ChipNest/`，升级安装不会丢失。
 - 当前正式版：**v1.0.1**（界面左上角与「设置 → 版本」可核对）。
+- 升级前请在任务管理器结束 `ChipNest.exe`，避免安装时文件被占用。
 - 首次运行若提示 SmartScreen，选择“更多信息 → 仍要运行”（安装包暂未签名）。
 
 ### 源码运行
