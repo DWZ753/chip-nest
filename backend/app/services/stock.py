@@ -7,7 +7,7 @@ SQLite/PostgreSQL 语义一致）；select_for_update 仅用于产出准确的�
 
 import json
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import events
@@ -140,8 +140,12 @@ async def ensure_position_free(
 
 
 async def next_led_index(session: AsyncSession) -> int:
-    """自动分配灯带序号：现有最大 + 1（0 起）。"""
-    max_led = await session.scalar(select(Component.led_index))
+    """自动分配灯带序号：现有最大 + 1（0 起）。
+
+    必须取 max：早先写成 select(led_index) 只拿到第一行的值，
+    第三个元件起就会和现有序号撞车（多个格子共用一颗灯）。
+    """
+    max_led = await session.scalar(select(func.max(Component.led_index)))
     return (max_led + 1) if max_led is not None else 0
 
 

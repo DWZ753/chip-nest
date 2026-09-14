@@ -21,6 +21,18 @@ async def _create(client, slot: int = 0, **overrides) -> dict:
     return resp.json()
 
 
+async def test_led_index_auto_assign_does_not_collide(client):
+    """删掉序号最小的元件后新建：灯序号要接着现有的最大值，不能撞号。"""
+    a = await _create(client, slot=0)
+    b = await _create(client, slot=1)
+    c = await _create(client, slot=2)
+    assert [a["led_index"], b["led_index"], c["led_index"]] == [0, 1, 2]
+
+    await client.delete(f"/api/v1/components/{a['id']}")
+    d = await _create(client, slot=3)
+    assert d["led_index"] == 3, "新建元件与现存灯序号重复"
+
+
 async def test_full_crud_flow_with_audit(client):
     # 建档：自动分配 led_index 0
     comp = await _create(client, slot=0)
