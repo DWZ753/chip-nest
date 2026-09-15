@@ -7,16 +7,18 @@ import { History, LayoutGrid, PackagePlus, Save, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { TransactionRow } from '../api/types'
-import { useBinsStore, zoneGrid } from '../stores/bins'
+import { useBinsStore, zoneGrid, zoneLayers } from '../stores/bins'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; manual: [] }>()
 const bins = useBinsStore()
 
 const form = reactive({
+  // layer_count 是「默认层数」：新建区与未单独设置的区沿用它
   zone_count: 1, layer_count: 3, row_count: 1, col_count: 4,
   zone_names: [''] as string[],
   zone_sizes: [[1, 4]] as number[][],
+  zone_layers: [3] as number[],
 })
 const transactions = ref<TransactionRow[]>([])
 const loading = ref(false)
@@ -37,6 +39,8 @@ watch(
       const [rows, cols] = zoneGrid(bins.layout, i + 1)
       return [rows, cols]
     })
+    form.zone_layers = Array.from({ length: form.zone_count }, (_, i) =>
+      zoneLayers(bins.layout, i + 1))
     msg.value = null
     loading.value = true
     try { transactions.value = await api.listTransactions(30) }
@@ -51,10 +55,13 @@ let zoneTimer: ReturnType<typeof setTimeout> | undefined
 watch(() => form.zone_count, (n) => {
   const names = [...form.zone_names]
   const sizes = [...form.zone_sizes]
+  const layers = [...form.zone_layers]
   while (names.length < n) names.push('')
   while (sizes.length < n) sizes.push([form.row_count, form.col_count])
+  while (layers.length < n) layers.push(form.layer_count)
   form.zone_names = names.slice(0, n)
   form.zone_sizes = sizes.slice(0, n)
+  form.zone_layers = layers.slice(0, n)
 })
 
 function addZone() {
@@ -73,6 +80,7 @@ function removeZone(zone: number) {
   window.clearTimeout(zoneTimer)
   form.zone_names.splice(zone - 1, 1)
   form.zone_sizes.splice(zone - 1, 1)
+  form.zone_layers.splice(zone - 1, 1)
   form.zone_count -= 1
   confirmZone.value = 0
 }
@@ -87,11 +95,14 @@ async function saveLayout() {
       const item = form.zone_sizes[i] ?? [form.row_count, form.col_count]
       return [Math.max(1, item[0] | 0), Math.max(1, item[1] | 0)]
     })
+    const layers = Array.from({ length: form.zone_count }, (_, i) =>
+      Math.max(1, Math.min(20, form.zone_layers[i] ?? form.layer_count)))
     await api.putLayout({
       zone_count: form.zone_count, layer_count: form.layer_count,
       row_count: form.row_count, col_count: form.col_count,
       zone_names: names,
       zone_sizes: sizes,
+      zone_layers: layers,
     })
     await bins.refreshAll()
     msg.value = '已保存'
@@ -143,7 +154,7 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                   </div>
                   <div class="grid grid-cols-3 gap-2.5">
                     <div v-for="f in [
-                      ['层数（共用）', 'layer_count'],
+                      ['默认层数', 'layer_count'],
                       ['默认行数', 'row_count'], ['默认列数', 'col_count']] as const" :key="f[1]">
                       <label class="field-label">{{ f[0] }}</label>
                       <input v-model.number="form[f[1]]" class="input num text-center" type="number" min="1"
@@ -153,7 +164,7 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                   <div class="mt-3 flex items-center gap-2">
                     <span class="text-[12.5px] font-semibold">共 {{ form.zone_count }} 个区</span>
                     <span class="text-[11.5px]" style="color: var(--text-faint)">
-                      新建区默认 {{ form.row_count }} 行 × {{ form.col_count }} 列
+                      每个区的层数/行数/列数都可单独设置，新建区用上面的默认值
                     </span>
                     <button class="btn ml-auto !px-3 !py-1 text-xs" :disabled="form.zone_count >= 9"
                             @click="addZone">＋ 新建区</button>
@@ -161,11 +172,16 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                   <div class="mt-2 flex flex-col gap-2">
                     <div v-for="z in form.zone_count" :key="z"
                          class="grid items-end gap-2"
-                         :style="{ gridTemplateColumns: 'minmax(0,1fr) 84px 84px 74px' }">
+                         :style="{ gridTemplateColumns: 'minmax(0,1fr) 62px 62px 62px 74px' }">
                       <div>
                         <label class="field-label">区{{ z }}名称</label>
                         <input v-model="form.zone_names[z - 1]" class="input !py-1.5 text-[13px]"
                                maxlength="24" placeholder="第 {{ z }} 区" />
+                      </div>
+                      <div>
+                        <label class="field-label">层</label>
+                        <input v-model.number="form.zone_layers[z - 1]" class="input num !py-1.5 text-center"
+                               type="number" min="1" max="20" />
                       </div>
                       <div>
                         <label class="field-label">行</label>

@@ -7,7 +7,7 @@ import type { ComponentItem, LayoutConfig } from '../api/types'
 
 const DEFAULT_LAYOUT: LayoutConfig = {
   zone_count: 1, layer_count: 3, row_count: 1, col_count: 4,
-  zone_names: [], zone_sizes: [], updated_at: '',
+  zone_names: [], zone_sizes: [], zone_layers: [], updated_at: '',
 }
 
 export interface BinPosition { zone: number; layer: number; slot: number }
@@ -18,6 +18,12 @@ export function zoneGrid(layout: LayoutConfig, zone: number): [number, number] {
   const item = layout.zone_sizes?.[zone - 1]
   if (Array.isArray(item) && item.length === 2) return [item[0], item[1]]
   return [layout.row_count, layout.col_count]
+}
+
+// 某区的层数：优先 zone_layers，缺项用全局默认 layer_count
+export function zoneLayers(layout: LayoutConfig, zone: number): number {
+  const n = layout.zone_layers?.[zone - 1]
+  return Number.isFinite(n) && (n as number) >= 1 ? (n as number) : layout.layer_count
 }
 
 export function zoneName(layout: LayoutConfig, zone: number): string {
@@ -42,7 +48,7 @@ export const useBinsStore = defineStore('bins', () => {
     const out: BinPosition[] = []
     for (let z = 1; z <= layout.value.zone_count; z++) {
       const [rows, cols] = zoneGrid(layout.value, z)
-      for (let l = 1; l <= layout.value.layer_count; l++) {
+      for (let l = 1; l <= zoneLayers(layout.value, z); l++) {
         for (let s = 0; s < rows * cols; s++) {
           const pos = { zone: z, layer: l, slot: s }
           if (!occupied.has(positionKey(pos))) out.push(pos)
@@ -68,7 +74,8 @@ export const useBinsStore = defineStore('bins', () => {
   const orphanComps = computed<ComponentItem[]>(() => {
     return components.value
       .filter((c) => {
-        if (c.zone > layout.value.zone_count || c.layer > layout.value.layer_count) return true
+        if (c.zone > layout.value.zone_count) return true
+        if (c.layer > zoneLayers(layout.value, c.zone)) return true
         const [rows, cols] = zoneGrid(layout.value, c.zone)
         return c.slot >= rows * cols
       })
@@ -121,6 +128,7 @@ export const useBinsStore = defineStore('bins', () => {
       col_count: layout.value.col_count,
       zone_names: names,
       zone_sizes: layout.value.zone_sizes ?? [],
+      zone_layers: layout.value.zone_layers ?? [],
     })
     layout.value = saved
   }
@@ -176,7 +184,7 @@ export const useBinsStore = defineStore('bins', () => {
       let target: BinPosition | null = null
       for (let z = 1; z <= layout.value.zone_count && !target; z++) {
         const [rows, cols] = zoneGrid(layout.value, z)
-        for (let l = 1; l <= layout.value.layer_count && !target; l++) {
+        for (let l = 1; l <= zoneLayers(layout.value, z) && !target; l++) {
           for (let s = 0; s < rows * cols; s++) {
             const pos = { zone: z, layer: l, slot: s }
             if (!occupied.has(positionKey(pos))) { target = pos; break }

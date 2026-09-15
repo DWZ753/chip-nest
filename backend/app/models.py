@@ -80,6 +80,17 @@ class Transaction(Base):
     source: Mapped[Optional[str]] = mapped_column(String(16))  # ui / guide / system
 
 
+class LookupCache(Base):
+    """联网识别缓存：key = 查询指纹（search:/detail:），避免重复打接口。"""
+
+    __tablename__ = "lookup_cache"
+
+    key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    hits: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
 class LayoutConfig(Base):
     """货架布局（单例行 id=1）：几个区，每区几层，每层 行x列 个格子。"""
 
@@ -94,4 +105,6 @@ class LayoutConfig(Base):
     zone_names: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     # 每区独立网格尺寸（JSON 数组，每项 [行, 列]，如 [[1,4],[2,3]]）；缺项用 row/col 默认值
     zone_sizes: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    # 每区独立层数（JSON 数组，如 [2,4]）；缺项用 layer_count
+    zone_layers: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

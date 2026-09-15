@@ -78,7 +78,7 @@ def test_legacy_db_upgrade_is_idempotent_and_preserves_rows(tmp_path):
     con = sqlite3.connect(path)
     assert {"manufacturer_part", "supplier_part", "tags", "display_tags",
             "display_fields", "card_items"} <= _cols(con, "components")
-    assert "zone_names" in _cols(con, "layout_configs")
+    assert {"zone_names", "zone_sizes", "zone_layers"} <= _cols(con, "layout_configs")
     # 老数据无损、默认值可用
     row = con.execute("SELECT name, quantity FROM components").fetchone()
     assert row == ("老电阻", 5)

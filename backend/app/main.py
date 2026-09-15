@@ -13,7 +13,7 @@ from app import config, log
 from app.hal.manager import get_manager
 from app.db import async_session, engine, upgrade_legacy_columns
 from app.models import DEFAULT_LAYOUT, Base, LayoutConfig
-from app.routers import bom, components, layout, system, transactions, ws
+from app.routers import bom, components, layout, lookup, system, transactions, ws
 
 import os as _os
 
@@ -51,7 +51,7 @@ async def lifespan(_app: FastAPI):
     await get_manager().stop()
 
 
-app = FastAPI(title="ChipNest", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="ChipNest", version="1.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,6 +65,7 @@ app.include_router(components.router)
 app.include_router(transactions.router)
 app.include_router(bom.router)
 app.include_router(system.router)
+app.include_router(lookup.router)
 app.include_router(ws.router)
 
 

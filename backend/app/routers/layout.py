@@ -45,6 +45,32 @@ def _zone_sizes(row: LayoutConfig) -> list[list[int]]:
     return sizes[:row.zone_count]
 
 
+def _zone_layers(row: LayoutConfig) -> list[int]:
+    """把 JSON 列读成每区层数（脏数据容错，缺项用 layer_count）。"""
+    try:
+        parsed = json.loads(row.zone_layers or "[]")
+    except (ValueError, TypeError):
+        parsed = []
+    layers: list[int] = []
+    for item in parsed if isinstance(parsed, list) else []:
+        try:
+            layers.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    while len(layers) < row.zone_count:
+        layers.append(row.layer_count)
+    return layers[:row.zone_count]
+
+
+def _dump_zone_layers(layers: list[int], count: int, default: int) -> str:
+    """规范化每区层数：数量与区数对齐，缺项用默认层数，限制 1-20。"""
+    cleaned = []
+    for i in range(count):
+        value = layers[i] if i < len(layers) else default
+        cleaned.append(max(1, min(20, int(value))))
+    return json.dumps(cleaned)
+
+
 def _dump_zone_sizes(sizes: list[list[int]], count: int,
                      default: list[int]) -> str:
     """规范化每区尺寸：数量与区数对齐，缺项用默认值。"""
@@ -74,6 +100,7 @@ async def read_layout(session: AsyncSession = Depends(get_session)) -> dict:
         "updated_at": row.updated_at,
         "zone_names": _zone_names(row),
         "zone_sizes": _zone_sizes(row),
+        "zone_layers": _zone_layers(row),
     }
 
 
@@ -89,6 +116,8 @@ async def update_layout(
     row.zone_names = _dump_zone_names(body.zone_names, body.zone_count)
     row.zone_sizes = _dump_zone_sizes(body.zone_sizes, body.zone_count,
                                       [body.row_count, body.col_count])
+    row.zone_layers = _dump_zone_layers(body.zone_layers, body.zone_count,
+                                        body.layer_count)
     await session.commit()
     return {
         "zone_count": row.zone_count,
@@ -98,4 +127,5 @@ async def update_layout(
         "updated_at": row.updated_at,
         "zone_names": _zone_names(row),
         "zone_sizes": _zone_sizes(row),
+        "zone_layers": _zone_layers(row),
     }

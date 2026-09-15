@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
   AdapterStatus, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  ResetResult, TransactionRow,
+  LookupResult, ResetResult, TransactionRow,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -101,6 +101,12 @@ export const api = {
     request<ComponentItem>('/api/v1/bom/pick', {
       method: 'POST',
       body: JSON.stringify({ component_id: componentId, amount }),
+    }),
+
+  // 联网识别：任意输入 → 候选元件 + 可填表字段
+  lookupAutofill: (text: string) =>
+    request<LookupResult>('/api/v1/lookup/autofill', {
+      method: 'POST', body: JSON.stringify({ text }),
     }),
 
   // 数据概况：清空按钮据此禁用（没有可清内容时不给点）

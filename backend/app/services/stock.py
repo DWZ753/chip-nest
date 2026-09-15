@@ -110,13 +110,29 @@ def zone_grid(layout: LayoutConfig, zone: int) -> tuple[int, int]:
     return layout.row_count, layout.col_count
 
 
+def zone_layers(layout: LayoutConfig, zone: int) -> int:
+    """取某区的层数：优先 zone_layers，缺项用全局默认 layer_count。"""
+    try:
+        parsed = json.loads(layout.zone_layers or "[]")
+    except ValueError:
+        parsed = []
+    if isinstance(parsed, list) and 1 <= zone <= len(parsed):
+        try:
+            return max(1, int(parsed[zone - 1]))
+        except (TypeError, ValueError):
+            pass
+    return layout.layer_count
+
+
 async def validate_position(session: AsyncSession, zone: int, layer: int, slot: int) -> None:
     """校验位置在布局范围内（slot 为层内行主序编号 0..rows*cols-1）。"""
     layout = await load_layout(session)
-    if not (1 <= zone <= layout.zone_count and 1 <= layer <= layout.layer_count):
-        raise OutOfLayout(
-            f"超出布局范围：当前 {layout.zone_count} 区 x {layout.layer_count} 层"
-        )
+    if not 1 <= zone <= layout.zone_count:
+        raise OutOfLayout(f"超出布局范围：当前共 {layout.zone_count} 个区")
+    layers = zone_layers(layout, zone)
+    if not 1 <= layer <= layers:
+        raise OutOfLayout(f"超出布局范围：第 {zone} 区只有 {layers} 层")
+    rows, cols = zone_grid(layout, zone)
     rows, cols = zone_grid(layout, zone)
     cells = rows * cols
     if not 0 <= slot < cells:

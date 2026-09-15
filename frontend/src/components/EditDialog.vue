@@ -3,11 +3,11 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { Minus, Pencil, Plus, Trash2, X } from '@lucide/vue'
+import { Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
-import type { ComponentItem, LayoutConfig } from '../api/types'
-import { useBinsStore, zoneGrid, type BinPosition } from '../stores/bins'
+import type { ComponentItem, LayoutConfig, LookupCandidate } from '../api/types'
+import { useBinsStore, zoneGrid, zoneLayers, type BinPosition } from '../stores/bins'
 import { ArrowLeftRight } from '@lucide/vue'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
@@ -58,6 +58,65 @@ const tagSuggestions = computed(() => {
 const initQty = ref(0)
 const amount = ref(1)
 const localQty = ref(0)
+
+// ---- 联网识别：输入料号/描述 → 自动填 名称/值/封装/厂商料号/供应商编号 ----
+const lookupText = ref('')
+const lookupBusy = ref(false)
+const lookupError = ref<string | null>(null)
+const lookupNote = ref<string | null>(null)
+const candidates = ref<LookupCandidate[]>([])
+const datasheet = ref('')
+const appliedParams = ref<Record<string, string>>({})
+
+function resetLookup(seed = '') {
+  lookupText.value = seed
+  lookupBusy.value = false
+  lookupError.value = null
+  lookupNote.value = null
+  candidates.value = []
+  datasheet.value = ''
+  appliedParams.value = {}
+}
+
+function applyCandidate(c: LookupCandidate) {
+  if (c.name) form.name = c.name
+  if (c.value) form.value = c.value
+  if (c.package) form.package = c.package
+  if (c.mpn) form.manufacturer_part = c.mpn
+  if (c.lcsc) form.supplier_part = c.lcsc
+  datasheet.value = c.datasheet || ''
+  appliedParams.value = c.params ?? {}
+  const tag = [c.lcsc, c.mpn].filter(Boolean).join(' ')
+  lookupNote.value = `已填入 ${tag}${c.source ? '（来源 ' + c.source + '）' : ''}`
+  lookupError.value = null
+}
+
+async function runLookup() {
+  const text = lookupText.value.trim()
+  if (!text || lookupBusy.value) return
+  lookupBusy.value = true
+  lookupError.value = null
+  lookupNote.value = null
+  candidates.value = []
+  try {
+    const res = await api.lookupAutofill(text)
+    candidates.value = res.candidates ?? []
+    if (candidates.value.length) {
+      applyCandidate(candidates.value[0])
+      if (candidates.value.length > 1) {
+        lookupNote.value = (lookupNote.value ?? '') + `，另有 ${candidates.value.length - 1} 个候选可选`
+      }
+    } else {
+      lookupError.value = res.online
+        ? '没查到，换个写法再试（如「10k 0603」「C14663」「STM32F103C8T6」）'
+        : '联网失败：检查网络后重试（离线也能手工填写）'
+    }
+  } catch (e) {
+    lookupError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    lookupBusy.value = false
+  }
+}
 const busy = ref(false)
 const deleting = ref(false)
 const errorMsg = ref<string | null>(null)
@@ -72,6 +131,8 @@ watch(
     adjustMode.value = false
     amount.value = 1
     const comp = props.comp
+    // 编辑时用现有的料号/编号当识别输入初值，省得再打一遍
+    resetLookup(comp ? (comp.manufacturer_part || comp.supplier_part || comp.name) : '')
     if (comp) {
       form.name = comp.name
       form.value = props.comp.value ?? ''
@@ -120,8 +181,9 @@ const zoneOptions = computed<SelectOption[]>(() =>
   Array.from({ length: props.layout.zone_count }, (_, i) => ({
     value: i + 1, label: String(i + 1),
   })))
+// 层选项按「当前选中的区」的层数生成（各区层数可以不同）
 const layerOptions = computed<SelectOption[]>(() =>
-  Array.from({ length: props.layout.layer_count }, (_, i) => ({
+  Array.from({ length: zoneLayers(props.layout, form.zone) }, (_, i) => ({
     value: i + 1, label: String(i + 1),
   })))
 const slotOptions = computed<SelectOption[]>(() =>
@@ -138,6 +200,8 @@ watch(
   () => {
     const [rows, cols] = zoneGrid(props.layout, form.zone)
     if (form.slot >= rows * cols) form.slot = 0
+    const layers = zoneLayers(props.layout, form.zone)
+    if (form.layer > layers) form.layer = layers
   },
 )
 
@@ -287,6 +351,58 @@ function close() {
               </div>
 
               <div class="flex flex-col gap-3.5">
+                <!-- 联网识别：认料号/描述，填下面的栏位（离线也能手工填） -->
+                <section class="rounded-2xl p-3" style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="flex items-center gap-2">
+                    <Sparkles :size="14" style="color: var(--accent)" />
+                    <span class="text-[12.5px] font-extrabold">联网识别</span>
+                    <span class="text-[11px]" style="color: var(--text-faint)">料号 / 描述 / 立创编号</span>
+                  </div>
+                  <div class="mt-2 flex items-center gap-2">
+                    <input v-model="lookupText" class="input mono !py-1.5" maxlength="80"
+                           placeholder="10k 0603 ／ C14663 ／ STM32F103C8T6"
+                           @keydown.enter="runLookup" />
+                    <button class="btn btn-primary !px-3 !py-1.5 text-xs"
+                            :disabled="lookupBusy || !lookupText.trim()" @click="runLookup">
+                      {{ lookupBusy ? '查询中…' : '识别' }}
+                    </button>
+                  </div>
+
+                  <div v-if="lookupNote" class="mt-1.5 text-[11.5px] font-semibold"
+                       style="color: var(--success)">{{ lookupNote }}</div>
+                  <div v-if="lookupError" class="mt-1.5 text-[11.5px] font-semibold"
+                       style="color: var(--danger)">{{ lookupError }}</div>
+
+                  <div v-if="Object.keys(appliedParams).length"
+                       class="mt-2 flex flex-wrap gap-1">
+                    <span v-for="(v, k) in appliedParams" :key="k" class="chip !px-1.5 !text-[10px]"
+                          :title="String(k)">{{ k }} {{ v }}</span>
+                  </div>
+                  <div v-if="datasheet" class="mt-1.5 text-[11px]">
+                    <a :href="datasheet" target="_blank" rel="noreferrer" style="color: var(--accent)">
+                      查看数据手册
+                    </a>
+                  </div>
+
+                  <div v-if="candidates.length > 1"
+                       class="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto pr-1">
+                    <button v-for="(c, i) in candidates" :key="(c.lcsc || 'x') + i"
+                            class="rounded-xl px-2.5 py-1.5 text-left text-[11.5px]"
+                            :style="'border: 1px solid ' + (i === 0
+                              ? 'color-mix(in srgb, var(--accent) 55%, var(--line))' : 'var(--line)')"
+                            @click="applyCandidate(c)">
+                      <div class="flex items-center gap-2">
+                        <span class="mono font-bold" style="color: var(--accent)">{{ c.lcsc || '—' }}</span>
+                        <span class="truncate font-semibold">{{ c.name }}</span>
+                        <span class="num ml-auto flex-shrink-0" style="color: var(--text-faint)">存 {{ c.stock }}</span>
+                      </div>
+                      <div class="truncate" style="color: var(--text-dim)">
+                        {{ c.mpn }}<span v-if="c.manufacturer"> · {{ c.manufacturer }}</span><span v-if="c.package"> · {{ c.package }}</span>
+                      </div>
+                    </button>
+                  </div>
+                </section>
+
                 <div>
                   <label class="field-label">名称</label>
                   <input v-model="form.name" class="input" maxlength="64"

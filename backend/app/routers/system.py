@@ -84,6 +84,7 @@ def _write_backup(
             "col_count": layout.col_count,
             "zone_names": _as_list(layout.zone_names),
             "zone_sizes": _as_list(layout.zone_sizes),
+            "zone_layers": _as_list(layout.zone_layers),
         },
         "components": [
             schemas.ComponentOut.model_validate(c).model_dump() for c in components
@@ -133,6 +134,7 @@ async def reset_data(
         layout.col_count = DEFAULT_LAYOUT["col_count"]
         layout.zone_names = "[]"
         layout.zone_sizes = "[]"
+        layout.zone_layers = "[]"
     await session.commit()
 
     # 灯带复位属于收尾动作，硬件不在线也不能影响清空结果

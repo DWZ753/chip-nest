@@ -53,6 +53,8 @@ class LayoutOut(BaseModel):
     zone_names: list[str] = []
     # 每区 [行, 列]；长度与 zone_count 对齐
     zone_sizes: list[list[int]] = []
+    # 每区层数；长度与 zone_count 对齐（缺项回落 layer_count）
+    zone_layers: list[int] = []
     updated_at: dt.datetime
 
 
@@ -65,6 +67,19 @@ class LayoutUpdate(BaseModel):
     zone_names: list[str] = Field(default=[], max_length=9)
     # 每区独立尺寸：[行, 列]，缺项沿用 row_count/col_count
     zone_sizes: list[list[int]] = Field(default=[], max_length=9)
+    # 每区独立层数，缺项沿用 layer_count
+    zone_layers: list[int] = Field(default=[], max_length=9)
+
+    @field_validator("zone_layers")
+    @classmethod
+    def _check_zone_layers(cls, values):
+        cleaned = []
+        for item in values or []:
+            layers = int(item)
+            if not 1 <= layers <= 20:
+                raise ValueError("每区层数 1-20")
+            cleaned.append(layers)
+        return cleaned
 
     @field_validator("zone_sizes")
     @classmethod
@@ -227,6 +242,43 @@ class TransactionOut(BaseModel):
     delta: int
     detail: Optional[str]
     source: Optional[str]
+
+
+# ---------- 联网识别 ----------
+
+class LookupRequest(BaseModel):
+    """任意输入：'10k 0603' / 'C14663' / 'STM32F103C8T6'。"""
+
+    text: str = Field(min_length=1, max_length=80)
+
+
+class LookupCandidateOut(BaseModel):
+    """一个候选元件：字段名对齐 Component，另带网络侧信息供界面展示。"""
+
+    lcsc: str = ""
+    mpn: str = ""
+    name: str = ""          # 建议填进「名称」的短名
+    value: str = ""
+    package: str = ""
+    manufacturer: str = ""
+    category: str = ""
+    description: str = ""
+    stock: int = 0
+    price: Optional[float] = None
+    datasheet: str = ""
+    source: str = ""
+    params: dict[str, str] = {}
+
+
+class LookupResultOut(BaseModel):
+    query: str
+    kind: Literal["lcsc", "keyword"] = "keyword"
+    best: Optional[LookupCandidateOut] = None
+    candidates: list[LookupCandidateOut] = []
+    # 直接能填进元件表单的字段（name/value/package/mpn/supplier）
+    fields: dict[str, str] = {}
+    # 至少有一个数据源正常应答（False=网络不通，界面据此提示）
+    online: bool = True
 
 
 # ---------- 数据维护 ----------

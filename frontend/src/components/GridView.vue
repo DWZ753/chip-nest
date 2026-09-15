@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Check, Move, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { ComponentItem } from '../api/types'
-import { positionKey, useBinsStore, zoneGrid, zoneName, type BinPosition } from '../stores/bins'
+import {
+  positionKey, useBinsStore, zoneGrid, zoneLayers, zoneName, type BinPosition,
+} from '../stores/bins'
 import BinCard from './BinCard.vue'
 
 const emit = defineEmits<{
@@ -88,6 +90,7 @@ function cancelZoneEdit() {
 
 function onCard(comp: ComponentItem) {
   if (batchMode.value) toggleSelect(comp)
+  else if (moveMode.value) pickCard(comp)
   else emit('edit', comp)
 }
 
@@ -131,11 +134,15 @@ async function deleteSelected() {
 
 const bins = useBinsStore()
 
-// ---------- 拖动搬家：把格子拖到虚线空格 ----------
-const dragComp = ref<ComponentItem | null>(null)  // 正在拖的元件
-const dropKey = ref<string | null>(null)          // 当前悬停的空位
-const moveNote = ref<string | null>(null)         // 搬家结果提示
+// ---------- 移动模式：点按拿起 → 点空格放下 ----------
+const moveMode = ref(false)
+const pickedId = ref<number | null>(null)
+const moveNote = ref<string | null>(null)          // 搬家结果/提示
 let noteTimer: ReturnType<typeof setTimeout> | undefined
+
+const picked = computed<ComponentItem | null>(
+  () => bins.components.find((c) => c.id === pickedId.value) ?? null,
+)
 
 function flashNote(text: string) {
   moveNote.value = text
@@ -148,49 +155,74 @@ function posText(pos: BinPosition): string {
   return `${pos.zone}区/${pos.layer}层/${pos.slot}格`
 }
 
-function onDragStart(ev: DragEvent, comp: ComponentItem) {
-  if (batchMode.value) {  // 多选模式下点击是选中，别误拖
-    ev.preventDefault()
+function enterMove() {
+  if (batchMode.value) exitBatch()
+  moveMode.value = true
+  pickedId.value = null
+  moveNote.value = null
+}
+
+function exitMove() {
+  moveMode.value = false
+  pickedId.value = null
+}
+
+function toggleMove() {
+  if (moveMode.value) exitMove()
+  else enterMove()
+}
+
+// 移动模式下点卡片：拿起 / 放回
+function pickCard(comp: ComponentItem) {
+  if (pickedId.value === comp.id) {
+    pickedId.value = null
+    flashNote(`已把「${comp.name}」放回原处`)
     return
   }
-  dragComp.value = comp
+  pickedId.value = comp.id
   moveNote.value = null
-  if (ev.dataTransfer) {
-    ev.dataTransfer.effectAllowed = 'move'
-    ev.dataTransfer.setData('text/plain', String(comp.id))
+}
+
+// 移动模式下点空格：放下手里的那张卡
+async function placeAt(pos: BinPosition) {
+  const comp = picked.value
+  if (!comp) {
+    flashNote('先点一个格子把它拿起来，再点这个空格放下')
+    return
   }
-}
-
-function onDragEnd() {
-  dragComp.value = null
-  dropKey.value = null
-}
-
-function onDragOver(pos: BinPosition, ev: DragEvent) {
-  if (!dragComp.value) return
-  ev.preventDefault()  // 只有 preventDefault 才允许放下
-  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
-  dropKey.value = positionKey(pos)
-}
-
-function onDragLeave(pos: BinPosition) {
-  if (dropKey.value === positionKey(pos)) dropKey.value = null
-}
-
-async function onDrop(pos: BinPosition) {
-  const comp = dragComp.value
-  dragComp.value = null
-  dropKey.value = null
-  if (!comp) return
   const from = { zone: comp.zone, layer: comp.layer, slot: comp.slot }
-  if (positionKey(from) === positionKey(pos)) return
+  if (positionKey(from) === positionKey(pos)) {
+    pickedId.value = null
+    return
+  }
   try {
     await bins.moveComponent(comp.id, pos)
+    pickedId.value = null
     flashNote(`已把「${comp.name}」从 ${posText(from)} 搬到 ${posText(pos)}`)
   } catch (e) {
+    pickedId.value = null
     flashNote(`搬家失败：${e instanceof Error ? e.message : String(e)}`)
   }
 }
+
+function onEmptyClick(pos: BinPosition) {
+  if (moveMode.value) void placeAt(pos)
+  else emit('create', pos)
+}
+
+function onEsc(ev: KeyboardEvent) {
+  if (ev.key !== 'Escape') return
+  if (pickedId.value !== null) {
+    const name = picked.value?.name ?? ''
+    pickedId.value = null
+    flashNote(`已把「${name}」放回原处`)
+  } else if (moveMode.value) {
+    exitMove()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onEsc))
+onBeforeUnmount(() => window.removeEventListener('keydown', onEsc))
 
 function zoneCells(zone: number): number {
   const [rows, cols] = zoneGrid(bins.layout, zone)
@@ -234,7 +266,15 @@ async function fixOrphans() {
         <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
       </template>
       <template v-else>
-        <span class="text-[11.5px]" style="color: var(--text-faint)">按住格子拖到虚线空格即可搬家</span>
+        <span class="text-[11.5px]" style="color: var(--text-faint)">
+          {{ moveMode
+            ? (picked ? '已拿起「' + picked.name + '」：点虚线空格放下' : '点一个格子拿起，再点空格放下')
+            : '点格子可编辑；搬家请先点「移动」' }}
+        </span>
+        <button class="btn !py-1.5 text-xs" :class="moveMode ? 'btn-primary' : ''"
+                title="搬家：点一个格子拿起，再点空格放下" @click="toggleMove">
+          <Move :size="13" /> {{ moveMode ? '退出移动' : '移动' }}
+        </button>
         <button class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
           ☑ 多选
         </button>
@@ -243,15 +283,30 @@ async function fixOrphans() {
 
     <!-- 搬家进行中：提示可放下的位置 -->
     <div
-      v-if="dragComp"
-      class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
+      v-if="moveMode"
+      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
       style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
     >
       <Move :size="16" style="color: var(--accent)" />
-      <span class="text-[13px] font-semibold">
-        正在搬「{{ dragComp.name }}」（{{ posText({ zone: dragComp.zone, layer: dragComp.layer, slot: dragComp.slot }) }}）
-      </span>
-      <span class="text-[12px]" style="color: var(--text-dim)">松手放到虚线空位即可，按 Esc 放弃</span>
+      <template v-if="picked">
+        <span class="text-[13px] font-semibold">
+          已拿起「{{ picked.name }}」（{{ posText({ zone: picked.zone, layer: picked.layer, slot: picked.slot }) }}）
+        </span>
+        <span class="text-[12px]" style="color: var(--text-dim)">
+          点任意虚线空格放下；再点它自己或按 Esc 放回原处
+        </span>
+      </template>
+      <template v-else-if="moveNote">
+        <Check :size="16" style="color: var(--success)" />
+        <span class="text-[13px] font-semibold">{{ moveNote }}</span>
+        <span class="text-[12px]" style="color: var(--text-dim)">继续点格子就能接着搬</span>
+      </template>
+      <template v-else>
+        <span class="text-[13px] font-semibold">移动模式</span>
+        <span class="text-[12px]" style="color: var(--text-dim)">
+          点一个格子把它拿起来，再点一个虚线空格放下；按 Esc 或点「退出移动」结束
+        </span>
+      </template>
     </div>
 
     <!-- 搬家结果提示 -->
@@ -320,7 +375,7 @@ async function fixOrphans() {
                   @click="selectZone(zone)">
             {{ zoneFullySelected(zone) ? '取消本区' : '选本区' }}
           </button>
-          <span class="chip !text-[10.5px]">共 {{ bins.layout.layer_count }} 层</span>
+          <span class="chip !text-[10.5px]">共 {{ zoneLayers(bins.layout, zone) }} 层</span>
           <span class="chip !text-[10.5px] num">
             每层 {{ zoneGrid(bins.layout, zone)[0] }}×{{ zoneGrid(bins.layout, zone)[1] }} 格
           </span>
@@ -328,7 +383,7 @@ async function fixOrphans() {
       </div>
 
       <div class="flex flex-col gap-6">
-        <div v-for="layer in bins.layout.layer_count" :key="layer">
+        <div v-for="layer in zoneLayers(bins.layout, zone)" :key="layer">
           <div class="mb-2 flex items-center gap-2">
             <span class="mono text-[11px] font-bold tracking-[0.1em]" style="color: var(--text-faint)">
               层 {{ layer }}
@@ -354,24 +409,18 @@ async function fixOrphans() {
                 :selectable="batchMode"
                 :selected="batchMode && selectedIds.has(compAt({ zone, layer, slot: slot - 1 })!.id)"
                 :show-supplier="batchMode"
-                :draggable="!batchMode"
+                :picked="pickedId === compAt({ zone, layer, slot: slot - 1 })!.id"
                 @click="onCard($event)"
-                @dragstart="onDragStart($event, compAt({ zone, layer, slot: slot - 1 })!)"
-                @dragend="onDragEnd"
               />
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
                 v-else
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
-                :class="{
-                  'drop-ready': !!dragComp,
-                  'drop-target': !!dragComp && dropKey === positionKey({ zone, layer, slot: slot - 1 }),
-                }"
-                :title="dragComp ? '放这里：把元件搬到这个空位' : '空位：点击新建元件'"
-                @click="emit('create', { zone, layer, slot: slot - 1 })"
-                @dragover="onDragOver({ zone, layer, slot: slot - 1 }, $event)"
-                @dragleave="onDragLeave({ zone, layer, slot: slot - 1 })"
-                @drop.prevent="onDrop({ zone, layer, slot: slot - 1 })"
+                :class="{ 'move-ready': !!picked }"
+                :title="moveMode
+                  ? (picked ? '放这里：把元件搬到这个空位' : '请先点一个格子拿起')
+                  : '空位：点击新建元件'"
+                @click="onEmptyClick({ zone, layer, slot: slot - 1 })"
               >
                 <Plus :size="20" />
               </button>

@@ -10,28 +10,11 @@ const props = defineProps<{
   selectable?: boolean
   selected?: boolean
   showSupplier?: boolean
-  /** 是否允许拖动搬家（多选模式下由父组件关掉） */
-  draggable?: boolean
+  /** 移动模式下已被拿起（等待放到空格） */
+  picked?: boolean
 }>()
 
-const emit = defineEmits<{
-  click: [ComponentItem]
-  dragstart: [DragEvent]
-  dragend: []
-}>()
-
-// 拖动中：卡片半透明，一眼看出搬的是它
-const dragging = ref(false)
-
-function onDragStart(ev: DragEvent) {
-  dragging.value = true
-  emit('dragstart', ev)
-}
-
-function onDragEnd() {
-  dragging.value = false
-  emit('dragend')
-}
+const emit = defineEmits<{ click: [ComponentItem] }>()
 
 const FIELD_ORDER = ['value', 'package', 'mpn', 'supplier']
 const FIELD_LABEL: Record<string, string> = {
@@ -192,15 +175,12 @@ const title = computed(() => {
     :class="{ 'search-hit': flashing, 'guide-now': guide,
               'card-selected': selected,
               'has-supplier': showSupplier && !!comp.supplier_part,
-              'card-dragging': dragging }"
-    :title="draggable ? title + '　（拖到虚线空格可搬家）' : title"
+              'card-picked': picked }"
+    :title="title"
     role="button"
     tabindex="0"
-    :draggable="draggable"
     @click="emit('click', comp)"
     @keydown.enter="emit('click', comp)"
-    @dragstart="onDragStart($event)"
-    @dragend="onDragEnd"
   >
     <!-- 名称最多两行；灯号/数量常驻占位，悬停才显现 -->
     <div class="flex items-start gap-1.5">

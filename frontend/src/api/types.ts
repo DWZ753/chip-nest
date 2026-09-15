@@ -6,6 +6,7 @@ export interface LayoutConfig {
   col_count: number
   zone_names: string[]
   zone_sizes: number[][]
+  zone_layers: number[]
   updated_at: string
 }
 
@@ -99,6 +100,32 @@ export interface ResetResult {
   deleted_transactions: number
   backup_path: string
   layout_reset: boolean
+}
+
+// 联网识别候选（后端 /api/v1/lookup/*）
+export interface LookupCandidate {
+  lcsc: string
+  mpn: string
+  name: string
+  value: string
+  package: string
+  manufacturer: string
+  category: string
+  description: string
+  stock: number
+  price: number | null
+  datasheet: string
+  source: string
+  params: Record<string, string>
+}
+
+export interface LookupResult {
+  query: string
+  kind: 'lcsc' | 'keyword'
+  best: LookupCandidate | null
+  candidates: LookupCandidate[]
+  fields: Record<string, string>
+  online: boolean
 }
 
 // WS /api/v1/ws/status 消息：{"type":"adapter.status", ...AdapterStatus}
