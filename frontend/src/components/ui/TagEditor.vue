@@ -29,6 +29,9 @@ const emit = defineEmits<{
   (e: 'update:shown', value: string[]): void
 }>()
 
+// 展示标签上限（与后端 schema 对齐）：跨格大卡地方大，比原来的 3 个放宽到 6 个
+const MAX_SHOWN_TAGS = 6
+
 const draft = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 const listEl = ref<HTMLElement | null>(null)
@@ -71,7 +74,7 @@ function toggleShown(token: string) {
     emitShownTokens(shown.filter((t) => t !== token))
     return
   }
-  if (isTag(token) && shown.filter(isTag).length >= 3) return  // 标签最多显示 3 个
+  if (isTag(token) && shown.filter(isTag).length >= MAX_SHOWN_TAGS) return  // 展示标签上限
   emitShownTokens([...shown, token])
 }
 

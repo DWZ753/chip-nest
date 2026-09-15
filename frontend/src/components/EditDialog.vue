@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { Check, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
+import { Check, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig, LookupCandidate } from '../api/types'
@@ -223,6 +223,7 @@ async function save() {
       const shownTags = items.value
         .filter((t) => t.startsWith('#') && shownItems.value.includes(t))
         .map((t) => t.slice(1))
+        .slice(0, 6)
       const created = await api.createComponent({
         name: form.name.trim(),
         value: form.value.trim() || null,
@@ -246,6 +247,7 @@ async function save() {
     const shownTags = items.value
       .filter((t) => t.startsWith('#') && shownItems.value.includes(t))
       .map((t) => t.slice(1))
+      .slice(0, 6)
     const patch: Record<string, unknown> = {
       name,
       value: form.value.trim() || null,
@@ -481,13 +483,13 @@ function close() {
                     </div>
                     <div class="mt-2.5 flex items-center gap-2">
                       <button class="btn flex-1" :disabled="busy" @click="stock(-1)">
-                        <Minus :size="15" /> 出库
+                        出库
                       </button>
                       <div class="w-28 flex-shrink-0">
                         <StepperInput v-model="amount" :min="1" :max="9999" :step="1" />
                       </div>
                       <button class="btn btn-primary flex-1" :disabled="busy" @click="stock(1)">
-                        <Plus :size="15" /> 入库
+                        入库
                       </button>
                     </div>
                   </div>

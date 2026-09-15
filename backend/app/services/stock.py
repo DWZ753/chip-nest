@@ -51,7 +51,7 @@ def _dump_card_items(items, tags) -> str:
     return json.dumps(kept[:24], ensure_ascii=False)
 
 
-def _dump_display_tags(tags, display, cap: int = 3) -> str:
+def _dump_display_tags(tags, display, cap: int = 6) -> str:
     """展示标签必须是标签的子集：标签被删掉后，展示位同步清理。"""
     tag_set = [str(t).strip()[:20] for t in (tags or [])]
     keep = [str(d).strip()[:20] for d in (display or []) if str(d).strip()[:20] in tag_set]

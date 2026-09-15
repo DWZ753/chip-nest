@@ -112,8 +112,8 @@ class ComponentCreate(BaseModel):
     supplier_part: Optional[str] = Field(default=None, max_length=40)
     # 用户自定义标签：最多 8 个、每个不超过 20 字符，空白剔除
     tags: list[str] = Field(default=[], max_length=8)
-    # 外部可见标签：≤3 个，通常取 tags 的子集
-    display_tags: list[str] = Field(default=[], max_length=3)
+    # 外部可见标签：≤6 个，通常取 tags 的子集（跨格大卡地方大，能多摆几个）
+    display_tags: list[str] = Field(default=[], max_length=6)
     display_fields: list[str] = Field(default=["value", "package"], max_length=4)
     card_items: list[str] = Field(default=[], max_length=24)
 
@@ -135,7 +135,7 @@ class ComponentCreate(BaseModel):
     @field_validator("display_tags")
     @classmethod
     def _clean_display_tags(cls, values):
-        return _clean_tags_list(values, 3)
+        return _clean_tags_list(values, 6)
 
 
 class ComponentUpdate(BaseModel):
@@ -150,7 +150,7 @@ class ComponentUpdate(BaseModel):
     manufacturer_part: Optional[str] = Field(default=None, max_length=64)
     supplier_part: Optional[str] = Field(default=None, max_length=40)
     tags: Optional[list[str]] = Field(default=None, max_length=8)
-    display_tags: Optional[list[str]] = Field(default=None, max_length=3)
+    display_tags: Optional[list[str]] = Field(default=None, max_length=6)
     display_fields: Optional[list[str]] = Field(default=None, max_length=4)
     card_items: Optional[list[str]] = Field(default=None, max_length=24)
 
@@ -176,7 +176,7 @@ class ComponentUpdate(BaseModel):
     def _clean_display_tags(cls, values):
         if values is None:
             return None
-        return _clean_tags_list(values, 3)
+        return _clean_tags_list(values, 6)
 
     led_index: Optional[int] = Field(default=None, ge=0)
     zone: Optional[int] = Field(default=None, ge=1)

@@ -18,6 +18,9 @@ const props = defineProps<{
   swapReady?: boolean
   /** 网格摆位（跨格卡用：显式指定行列与跨度，避免挤错位） */
   gridStyle?: Record<string, string>
+  /** 占用几列／几行：跨格卡地方大，显示链可以多铺几行 */
+  colSpan?: number
+  rowSpan?: number
   /** 共用卡：这一格是某个物料的附加占用格 */
   shared?: boolean
 }>()
@@ -88,11 +91,25 @@ function chipClass(chip: Chip): string {
 // ---------- 自适应：按行内实际宽度决定显示几个，其余折叠为 +N ----------
 const chipsRow = ref<HTMLElement | null>(null)
 const measureEl = ref<HTMLElement | null>(null)
+const rootEl = ref<HTMLElement | null>(null)
 const visibleFlags = ref<boolean[]>([])
 let observer: ResizeObserver | null = null
 
-const MAX_ROWS = 2            // 显示链最多两行，放不下的统一折叠为 +N
 const GAP = 3
+const CHIP_ROW_H = 15         // 一行 chip 的大致高度（含间距）
+const CARD_CHROME_H = 44      // 标题行 + 底部色带 + 内边距
+
+// 能铺几行：普通格子保持两行；跨格卡按卡片实际高度算，铺得下多少就显示多少
+// （不再写死行数，宽卡靠宽度多放、高卡靠高度多铺）
+const rowBudget = computed(() => {
+  const cols = props.colSpan ?? 1
+  const rows = props.rowSpan ?? 1
+  if (cols <= 1 && rows <= 1) return 2
+  const height = rootEl.value?.clientHeight ?? 0
+  const byHeight = height > 0 ? Math.floor(Math.max(0, height - CARD_CHROME_H) / CHIP_ROW_H) : 0
+  const fallback = rows > 1 ? rows + 1 : 3
+  return Math.max(2, Math.min(6, byHeight || fallback))
+})
 
 function recompute() {
   const list = chips.value
@@ -108,7 +125,8 @@ function recompute() {
   const widths = nodes.slice(0, list.length).map((n) => n.getBoundingClientRect().width)
   const plusW = nodes[list.length].getBoundingClientRect().width + GAP
 
-  // 逐行贪心（两行上限）：字段与标签一视同仁，放不下就折叠
+  // 逐行贪心（行数上限按卡片实际大小算）：字段与标签一视同仁，放不下就折叠
+  const maxRows = rowBudget.value
   const flags = list.map(() => false)
   let rows = 1
   let used = 0
@@ -119,7 +137,7 @@ function recompute() {
       used += need
       return
     }
-    if (rows < MAX_ROWS) {
+    if (rows < maxRows) {
       rows += 1
       used = widths[i]
       flags[i] = true
@@ -142,13 +160,16 @@ function recompute() {
 onMounted(async () => {
   await nextTick()
   recompute()
-  if (typeof ResizeObserver !== 'undefined' && chipsRow.value) {
+  if (typeof ResizeObserver !== 'undefined') {
     observer = new ResizeObserver(() => recompute())
-    observer.observe(chipsRow.value)
+    if (chipsRow.value) observer.observe(chipsRow.value)
+    // 卡片尺寸也会变（跨格卡的跨度、布局改动），一并监听
+    if (rootEl.value) observer.observe(rootEl.value)
   }
 })
 onBeforeUnmount(() => observer?.disconnect())
 watch(chips, async () => { await nextTick(); recompute() })
+watch(() => [props.colSpan, props.rowSpan], async () => { await nextTick(); recompute() })
 
 const visFlags = computed(() => visibleFlags.value)
 const hiddenChips = computed(() => chips.value.filter((_, i) => !visFlags.value[i]))
@@ -179,6 +200,7 @@ const title = computed(() => {
 
 <template>
   <div
+    ref="rootEl"
     class="bin-card group"
     :class="{ 'search-hit': flashing, 'guide-now': guide,
               'card-selected': selected,

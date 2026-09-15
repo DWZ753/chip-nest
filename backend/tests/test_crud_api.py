@@ -142,6 +142,21 @@ async def test_position_out_of_layout_rejected(client):
     assert resp.status_code == 400
     assert await _count_transactions() == 0  # 失败不留痕
 
+async def test_display_tags_cap_is_six(client):
+    """展示标签最多 6 个：跨格大卡地方大，能多摆几个；超出的截断。"""
+    tags = [f"t{i}" for i in range(8)]
+    comp = await _create(client, slot=0, name="多标签", tags=tags,
+                         display_tags=tags[:6])
+    assert comp["display_tags"] == tags[:6]
+    assert comp["tags"] == tags                      # 普通标签仍是上限 8
+
+    too_many = await client.post("/api/v1/components", json={
+        "name": "超量", "zone": 1, "layer": 1, "slot": 1,
+        "tags": tags, "display_tags": tags[:7],
+    })
+    assert too_many.status_code == 422
+
+
 async def test_display_tags_roundtrip(client):
     """外部显示标签：建档携带 → 读取 → 改选/清空。"""
     comp = await _create(client, slot=0, name="主控芯片", value=None,

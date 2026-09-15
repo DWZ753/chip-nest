@@ -202,13 +202,13 @@ watch(() => props.open, (open) => {
                       :class="mergeSlots ? '' : 'opacity-55'"
                       :style="mergeSlots ? 'color: var(--accent); border-color: var(--accent)' : ''"
                       @click="setMergeSlots(true)"
-                    >合并一张卡</button>
+                    >合并渲染</button>
                     <button
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="mergeSlots ? 'opacity-55' : ''"
                       :style="mergeSlots ? '' : 'color: var(--accent); border-color: var(--accent)'"
                       @click="setMergeSlots(false)"
-                    >分开显示</button>
+                    >分开渲染</button>
                   </div>
                 </section>
 

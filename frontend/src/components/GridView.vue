@@ -659,6 +659,8 @@ async function fixOrphans() {
                 v-if="cell.kind !== 'empty'"
                 :comp="cell.comp!"
                 :grid-style="cellStyle(cell)"
+                :col-span="cell.colSpan"
+                :row-span="cell.rowSpan"
                 :shared="cell.kind === 'shared'"
                 :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
                 :guide="bins.guideKey === positionKey(cell.pos)"
