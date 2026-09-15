@@ -218,6 +218,49 @@ async def create_component(
     return component
 
 
+# 互换时临时停放用的非法槽位（DB 允许负数，validate_position 不会放行它）
+TEMP_SLOT = -1
+
+
+async def swap_positions(
+    session: AsyncSession, a: Component, b: Component, source: str = "ui"
+) -> tuple[Component, Component]:
+    """两个元件的槽位互换，灯号一起对调（灯带始终对应槽位）。
+
+    联合唯一约束是即时生效的，所以三步走：A 先停到临时槽位 → B 落到 A 的原位
+    → A 落到 B 的原位，全程同一事务，中途失败整体回滚，不会出现两格空着或撞车。
+    """
+    a_pos = (a.zone, a.layer, a.slot)
+    b_pos = (b.zone, b.layer, b.slot)
+    a_led, b_led = a.led_index, b.led_index
+
+    await validate_position(session, *a_pos)
+    await validate_position(session, *b_pos)
+
+    a.zone, a.layer, a.slot = a_pos[0], a_pos[1], TEMP_SLOT
+    await session.flush()
+
+    b.zone, b.layer, b.slot = a_pos
+    b.led_index = a_led
+    await session.flush()
+
+    a.zone, a.layer, a.slot = b_pos
+    a.led_index = b_led
+    await session.flush()
+
+    session.add(Transaction(
+        kind="adjust", delta=0, source=source,
+        detail=(f"互换 {a.name}（{_position(*a_pos)}）与 "
+                f"{b.name}（{_position(*b_pos)}）"),
+    ))
+    await session.commit()
+
+    # 位置变了，灯带按新库存重新点亮各自槽位
+    events.emit("stock.changed", a)
+    events.emit("stock.changed", b)
+    return a, b
+
+
 async def update_component(
     session: AsyncSession, component: Component, patch: dict, source: str = "ui"
 ) -> Component:

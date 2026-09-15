@@ -8,6 +8,7 @@ import { CheckCircle2, ListPlus, PackagePlus, Plus, Trash2, X } from '@lucide/vu
 import { api } from '../api/client'
 import type { BinPosition } from '../stores/bins'
 import { useBinsStore } from '../stores/bins'
+import { suggestThreshold } from '../utils/stock'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
@@ -114,7 +115,7 @@ async function importAll() {
         supplier_part: row.supplierPart.trim() || null,
         tags: [...row.tags],
         quantity: Math.max(1, row.quantity | 0),
-        threshold: 5,
+        threshold: suggestThreshold(Math.max(1, row.quantity | 0)),
         zone: parsePos(row.posKey).zone,
         layer: parsePos(row.posKey).layer,
         slot: parsePos(row.posKey).slot,

@@ -11,6 +11,7 @@ import {
 import { api } from '../api/client'
 import type { BomParseOut, BomPlan, BomStep } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
+import { suggestThreshold } from '../utils/stock'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 
 const props = defineProps<{ open: boolean }>()
@@ -235,7 +236,7 @@ async function importAll() {
         manufacturer_part: row.manufacturerPart.trim() || null,
         supplier_part: row.supplierPart.trim() || null,
         quantity: Math.max(1, row.quantity | 0),
-        threshold: 5,
+        threshold: suggestThreshold(Math.max(1, row.quantity | 0)),
         zone: pos.zone, layer: pos.layer, slot: pos.slot,
       })
       bins.upsert(created)

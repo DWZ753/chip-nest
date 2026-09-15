@@ -232,6 +232,20 @@ class StockChange(BaseModel):
     source: Literal["ui", "guide", "system"] = "ui"
 
 
+class SwapRequest(BaseModel):
+    """两个元件互换槽位（同区/跨区都行）。"""
+
+    a_id: int = Field(ge=1)
+    b_id: int = Field(ge=1)
+
+
+class SwapOut(BaseModel):
+    """互换后的两个元件（位置与灯号都已对调）。"""
+
+    a: ComponentOut
+    b: ComponentOut
+
+
 class TransactionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

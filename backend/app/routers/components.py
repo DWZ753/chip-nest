@@ -80,6 +80,22 @@ async def create_component(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.post("/swap", response_model=schemas.SwapOut)
+async def swap_components(
+    body: schemas.SwapRequest, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """两个格子互换内容（位置与灯号对调），一条事务完成。"""
+    if body.a_id == body.b_id:
+        raise HTTPException(status_code=400, detail="两个格子相同")
+    a = await _get_component(session, body.a_id)
+    b = await _get_component(session, body.b_id)
+    try:
+        a, b = await stock_service.swap_positions(session, a, b)
+    except stock_service.OutOfLayout as exc:
+        raise _map_error(exc)
+    return {"a": a, "b": b}
+
+
 @router.get("/{component_id}", response_model=schemas.ComponentOut)
 async def get_component(
     component_id: int, session: AsyncSession = Depends(get_session)

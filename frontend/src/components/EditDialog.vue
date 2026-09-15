@@ -8,6 +8,7 @@ import { Check, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig, LookupCandidate } from '../api/types'
 import { useBinsStore, zoneGrid, zoneLayers, type BinPosition } from '../stores/bins'
+import { suggestThreshold } from '../utils/stock'
 import { ArrowLeftRight } from '@lucide/vue'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
@@ -57,6 +58,13 @@ const tagSuggestions = computed(() => {
 })
 const initQty = ref(0)
 const amount = ref(1)
+// 阈值默认跟着初始库存走；用户手动改过就不再自动覆盖
+const thresholdTouched = ref(false)
+
+watch(initQty, (qty) => {
+  if (thresholdTouched.value) return
+  form.threshold = suggestThreshold(qty)
+})
 const localQty = ref(0)
 
 // ---- 联网识别：输入料号/描述 → 自动填 名称/值/封装/厂商料号/供应商编号 ----
@@ -156,6 +164,7 @@ watch(
         ...(comp.display_tags ?? []).map((t) => '#' + t),
       ]
       form.threshold = props.comp.threshold
+      thresholdTouched.value = true  // 已有元件不自动改阈值
       form.zone = props.comp.zone
       form.layer = props.comp.layer
       form.slot = props.comp.slot
@@ -175,6 +184,7 @@ watch(
       form.slot = p.slot
       initQty.value = 0
       localQty.value = 0
+      thresholdTouched.value = false
     }
   },
   { immediate: true },
@@ -362,10 +372,10 @@ function close() {
                     <span class="text-[12.5px] font-extrabold">联网识别</span>
                   </div>
                   <div class="mt-2 flex items-center gap-2">
-                    <input v-model="lookupText" class="input mono !py-1.5" maxlength="80"
-                           placeholder="10k 0603 ／ C14663 ／ STM32F103C8T6"
+                    <input v-model="lookupText" class="input mono min-w-0 flex-1 !py-1.5" maxlength="80"
+                           placeholder="10k 0603 ／ C14663 ／ STM32H750VBT6"
                            @keydown.enter="runLookup" />
-                    <button class="btn btn-primary !px-3 !py-1.5 text-xs"
+                    <button class="btn btn-primary flex-shrink-0 whitespace-nowrap !px-3 !py-1.5 text-xs"
                             :disabled="lookupBusy || !lookupText.trim()" @click="runLookup">
                       {{ lookupBusy ? '查询中…' : '识别' }}
                     </button>
@@ -477,7 +487,8 @@ function close() {
                   </div>
                   <div>
                     <label class="field-label">补货阈值</label>
-                    <input v-model.number="form.threshold" class="input num" type="number" min="0" max="9999" />
+                    <StepperInput v-model="form.threshold" :min="0" :max="9999"
+                                  @update:model-value="thresholdTouched = true" />
                   </div>
                 </div>
 

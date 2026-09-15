@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
   AdapterStatus, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  LookupResult, ReindexResult, ResetResult, TransactionRow,
+  LookupResult, ReindexResult, ResetResult, SwapOut, TransactionRow,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -81,6 +81,11 @@ export const api = {
     request<ComponentItem>(`/api/v1/components/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteComponent: (id: number) =>
     request<void>(`/api/v1/components/${id}`, { method: 'DELETE' }),
+  // 两个格子互换内容（位置与灯号对调）
+  swapComponents: (aId: number, bId: number) =>
+    request<SwapOut>('/api/v1/components/swap', {
+      method: 'POST', body: JSON.stringify({ a_id: aId, b_id: bId }),
+    }),
   changeStock: (id: number, delta: number, note?: string, source: 'ui' | 'guide' | 'system' = 'ui') =>
     request<ComponentItem>(`/api/v1/components/${id}/stock`, {
       method: 'POST',

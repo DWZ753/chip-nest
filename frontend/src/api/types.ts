@@ -87,6 +87,12 @@ export interface AdapterStatus {
   error: string | null
 }
 
+// 两个格子互换内容
+export interface SwapOut {
+  a: ComponentItem
+  b: ComponentItem
+}
+
 // 灯带序号重排结果
 export interface ReindexResult {
   total: number

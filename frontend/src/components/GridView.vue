@@ -89,9 +89,16 @@ function cancelZoneEdit() {
 }
 
 function onCard(comp: ComponentItem) {
-  if (batchMode.value) toggleSelect(comp)
-  else if (moveMode.value) pickCard(comp)
-  else emit('edit', comp)
+  if (batchMode.value) {
+    toggleSelect(comp)
+    return
+  }
+  if (moveMode.value) {
+    if (picked.value && picked.value.id !== comp.id) void swapWith(comp)
+    else pickCard(comp)
+    return
+  }
+  emit('edit', comp)
 }
 
 const confirmClearSupplier = ref(false)
@@ -172,7 +179,7 @@ function toggleMove() {
   else enterMove()
 }
 
-// 移动模式下点卡片：拿起 / 放回
+// 移动模式下点卡片：拿起 / 放回 / 与手上的互换
 function pickCard(comp: ComponentItem) {
   if (pickedId.value === comp.id) {
     pickedId.value = null
@@ -181,6 +188,20 @@ function pickCard(comp: ComponentItem) {
   }
   pickedId.value = comp.id
   moveNote.value = null
+}
+
+// 手上拿着一个，再点另一个有料的格子 -> 两个格子互换
+async function swapWith(target: ComponentItem) {
+  const held = picked.value
+  if (!held || held.id === target.id) return
+  try {
+    const result = await bins.swapComponents(held.id, target.id)
+    pickedId.value = null
+    flashNote(`已把「${result.a.name}」与「${result.b.name}」互换`)
+  } catch (e) {
+    pickedId.value = null
+    flashNote(`互换失败：${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 // 移动模式下点空格：放下手里的那张卡
@@ -377,6 +398,7 @@ async function fixOrphans() {
                 :selected="batchMode && selectedIds.has(compAt({ zone, layer, slot: slot - 1 })!.id)"
                 :show-supplier="batchMode"
                 :picked="pickedId === compAt({ zone, layer, slot: slot - 1 })!.id"
+                :swap-ready="!!picked && pickedId !== compAt({ zone, layer, slot: slot - 1 })!.id"
                 @click="onCard($event)"
               />
               <!-- 空位：虚线占位卡，点击新建 -->

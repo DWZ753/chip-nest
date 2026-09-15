@@ -415,6 +415,12 @@ html.light .chip-tag { color: #5a5ecb; }
   box-shadow: 0 0 0 1.5px var(--accent), var(--glow-primary);
 }
 .bin-card.card-picked::before { opacity: 0.9; }
+/* 手上拿着别的格子时，其它有料格子可作为互换目标 */
+.bin-card.swap-ready:hover {
+  border-style: dashed;
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
 
 /* 底部库存色带：轨道常显 + 填充三态；缺货满格脉冲告急 */
 .band-track {

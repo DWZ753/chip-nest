@@ -165,6 +165,14 @@ export const useBinsStore = defineStore('bins', () => {
     return updated
   }
 
+  // 两个格子互换内容：后端一条事务完成，这里把两个元件都刷新到本地
+  async function swapComponents(aId: number, bId: number) {
+    const result = await api.swapComponents(aId, bId)
+    upsert(result.a)
+    upsert(result.b)
+    return result
+  }
+
   async function removeComponent(id: number) {
     await api.deleteComponent(id)
     components.value = components.value.filter((c) => c.id !== id)
@@ -221,7 +229,8 @@ export const useBinsStore = defineStore('bins', () => {
     compsByKey, orphanComps,
     refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
     updateZoneName,
-    moveComponent, removeComponent, adjustStock, relocateOrphans, setGuidePosition,
+    moveComponent, swapComponents, removeComponent, adjustStock, relocateOrphans,
+    setGuidePosition,
     resetAfterWipe,
   }
 })

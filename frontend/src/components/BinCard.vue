@@ -12,6 +12,8 @@ const props = defineProps<{
   showSupplier?: boolean
   /** 移动模式下已被拿起（等待放到空格） */
   picked?: boolean
+  /** 移动模式下手上拿着别的格子：本格可作为互换目标 */
+  swapReady?: boolean
 }>()
 
 const emit = defineEmits<{ click: [ComponentItem] }>()
@@ -175,7 +177,8 @@ const title = computed(() => {
     :class="{ 'search-hit': flashing, 'guide-now': guide,
               'card-selected': selected,
               'has-supplier': showSupplier && !!comp.supplier_part,
-              'card-picked': picked }"
+              'card-picked': picked,
+              'swap-ready': swapReady && !picked }"
     :title="title"
     role="button"
     tabindex="0"
