@@ -163,9 +163,6 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                   </div>
                   <div class="mt-3 flex items-center gap-2">
                     <span class="text-[12.5px] font-semibold">共 {{ form.zone_count }} 个区</span>
-                    <span class="text-[11.5px]" style="color: var(--text-faint)">
-                      每个区的层数/行数/列数都可单独设置，新建区用上面的默认值
-                    </span>
                     <button class="btn ml-auto !px-3 !py-1 text-xs" :disabled="form.zone_count >= 9"
                             @click="addZone">＋ 新建区</button>
                   </div>
@@ -194,7 +191,7 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                                type="number" min="1" max="50" />
                       </div>
                       <button class="btn !px-2 !py-1.5 text-xs" :disabled="form.zone_count <= 1"
-                              :title="'删除第 ' + z + ' 区（区内元件会变成游离状态，可一键搬回）'"
+                              :title="'删除第 ' + z + ' 区'"
                               @click="removeZone(z)">
                         {{ confirmZone === z ? '确认删除' : '删除' }}
                       </button>

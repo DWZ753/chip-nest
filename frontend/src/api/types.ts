@@ -87,6 +87,12 @@ export interface AdapterStatus {
   error: string | null
 }
 
+// 灯带序号重排结果
+export interface ReindexResult {
+  total: number
+  changed: number
+}
+
 // 数据概况（清空按钮据此禁用）
 export interface DataSummary {
   components: number

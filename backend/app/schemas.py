@@ -291,6 +291,13 @@ class DataSummaryOut(BaseModel):
     empty: bool
 
 
+class ReindexResult(BaseModel):
+    """灯带序号重排结果：总元件数 + 序号有变动的数量。"""
+
+    total: int = Field(ge=0)
+    changed: int = Field(ge=0)
+
+
 class ResetRequest(BaseModel):
     """清空所有数据：confirm 必须等于确认词（前端要用户手输），防误触。"""
 

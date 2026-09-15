@@ -155,3 +155,38 @@ async def test_reset_on_empty_db_is_idempotent(client):
     async with async_session() as session:
         row = await session.scalar(select(LayoutConfig).where(LayoutConfig.id == 1))
         assert row is not None and row.zone_count == 1
+
+
+async def test_reindex_leds_follows_position_order(client):
+    """灯带序号按 区→层→格 重排；重复序号被修正，操作留一条流水。"""
+    a = await _create(client, slot=0)
+    b = await _create(client, slot=1)
+    c = await _create(client, slot=2)
+    assert [a["led_index"], b["led_index"], c["led_index"]] == [0, 1, 2]
+
+    # 手工制造一串乱序/重复的灯号（模拟老版本库）
+    for comp, led in ((a, 7), (b, 7), (c, 0)):
+        resp = await client.patch(f"/api/v1/components/{comp['id']}", json={"led_index": led})
+        assert resp.status_code == 200, resp.text
+
+    resp = await client.post("/api/v1/system/reindex-leds")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body == {"total": 3, "changed": 3}
+
+    rows = (await client.get("/api/v1/components")).json()
+    assert [r["led_index"] for r in rows] == [0, 1, 2]  # 按 slot 顺序
+    assert rows[0]["name"] == a["name"]
+
+    # 再跑一次：没有变动，也不重复记流水
+    before = len((await client.get("/api/v1/transactions")).json())
+    resp = await client.post("/api/v1/system/reindex-leds")
+    assert resp.json() == {"total": 3, "changed": 0}
+    assert len((await client.get("/api/v1/transactions")).json()) == before
+
+    # 搬家后重排：灯号跟着新位置走
+    await client.patch(f"/api/v1/components/{a['id']}", json={"zone": 1, "layer": 1, "slot": 3})
+    await client.post("/api/v1/system/reindex-leds")
+    rows = (await client.get("/api/v1/components")).json()
+    assert [r["led_index"] for r in rows] == [0, 1, 2]
+    assert [r["slot"] for r in rows] == [1, 2, 3]

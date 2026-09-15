@@ -5,7 +5,7 @@ import {
 } from '@headlessui/vue'
 import {
   CheckCircle2, FileUp, ListPlus, PackageX, Play,
-  ScanText, ShoppingCart, X,
+  ScanSearch, ScanText, ShoppingCart, X,
 } from '@lucide/vue'
 
 import { api } from '../api/client'
@@ -55,6 +55,10 @@ watch(
     view.value = 'work'
     rows.value = []
     doneCount.value = 0
+    idBusy.value = false
+    idStop.value = false
+    idDone.value = 0
+    idTotal.value = 0
   },
 )
 
@@ -144,7 +148,7 @@ function openImportList() {
   view.value = 'import'
   const unplaced = rows.value.filter((r) => !r.posKey).length
   errorMsg.value = unplaced
-    ? '空格不足：还有 ' + unplaced + ' 行没有默认位置，请手动选择或先在「设置」里扩容布局'
+    ? '空格不足：还有 ' + unplaced + ' 行没有默认位置'
     : null
 }
 
@@ -158,6 +162,56 @@ const slotLabels = computed(() => {
   return map
 })
 
+// ---------- 联网识别料号（整表入库用） ----------
+const idBusy = ref(false)
+const idDone = ref(0)
+const idTotal = ref(0)
+const idStop = ref(false)
+
+function rowQuery(row: RowEdit): string {
+  const code = (row.supplierPart || row.manufacturerPart || '').trim()
+  if (code) return code
+  const byValue = [row.value, row.package].map((s) => (s || '').trim()).filter(Boolean)
+  if (byValue.length) return byValue.join(' ')
+  return [row.name, row.package].map((s) => (s || '').trim()).filter(Boolean).join(' ')
+}
+
+async function identifyRow(row: RowEdit): Promise<boolean> {
+  const query = rowQuery(row)
+  if (!query) { row.err = '没有可识别的信息'; return false }
+  const res = await api.lookupAutofill(query)
+  const best = res.best
+  if (!best) { row.err = '没查到对应元件'; return false }
+  if (!row.name.trim() || row.name === '未命名') row.name = best.name || row.name
+  if (!row.value.trim() && best.value) row.value = best.value
+  if (!row.package.trim() && best.package) row.package = best.package
+  if (!row.manufacturerPart.trim() && best.mpn) row.manufacturerPart = best.mpn
+  if (!row.supplierPart.trim() && best.lcsc) row.supplierPart = best.lcsc
+  row.err = ''
+  return true
+}
+
+async function identifyAll() {
+  if (idBusy.value) return
+  const targets = rows.value.filter((r) => r.status !== 'ok' && !r.supplierPart.trim())
+  if (!targets.length) return
+  idBusy.value = true
+  idStop.value = false
+  idDone.value = 0
+  idTotal.value = targets.length
+  errorMsg.value = null
+  for (const row of targets) {
+    if (idStop.value) break
+    try {
+      await identifyRow(row)
+    } catch (e) {
+      row.err = errText(e)
+    }
+    idDone.value += 1
+  }
+  idBusy.value = false
+}
+
 async function importAll() {
   const pend = rows.value.filter((r) => r.status !== 'ok')
   if (!pend.length) return
@@ -169,7 +223,7 @@ async function importAll() {
   for (const row of pend) {
     if (!row.posKey || taken.has(row.posKey)) {
       row.status = 'err'
-      row.err = row.posKey ? '该格已被本批次占用，请换一个' : '请选择放置格子'
+      row.err = row.posKey ? '该格已被本批次占用' : '未选择格子'
       continue
     }
     const pos = parseKey(row.posKey)
@@ -291,7 +345,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                   <div v-if="plan.missing.length" class="fade-up rounded-xl px-4 py-3"
                        style="border:1px solid rgba(217,178,62,.5); background: var(--panel-strong)">
                     <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold" style="color: var(--warn)">
-                      <PackageX :size="15" /> 库存不足，请先补货（{{ plan.missing.length }} 项）
+                      <PackageX :size="15" /> 库存不足（{{ plan.missing.length }} 项）
                     </div>
                     <div class="overflow-hidden rounded-lg"
                          style="border: 1px solid var(--line); background: var(--surface)">
@@ -322,7 +376,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                   </div>
                   <div class="fade-up flex flex-col gap-1.5 rounded-xl px-4 py-3"
                        style="border: 1px solid var(--line-strong); background: var(--panel)">
-                    <div class="text-[12.5px] font-extrabold" style="color: var(--accent-ink)">取料顺序（共 {{ plan.steps.length }} 步）</div>
+                    <div class="text-[12.5px] font-extrabold" style="color: var(--accent-ink)">取料顺序 · {{ plan.steps.length }} 步</div>
                     <div v-for="(step, i) in plan.steps" :key="step.component.id"
                          class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px]"
                          :style="i ? 'border-top: 1px solid var(--line)' : ''">
@@ -367,7 +421,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
 
                 <div class="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
                   <div v-for="row in rows" :key="row.key"
-                       class="grid grid-cols-[minmax(0,1fr)_96px_84px_64px_150px_20px] items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px]"
+                       class="grid grid-cols-[minmax(0,1fr)_96px_84px_64px_150px_20px_22px] items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px]"
                        :style="row.status === 'err' ? 'background: rgba(255,92,122,.08)'
                          : row.status === 'ok' ? 'background: rgba(103,185,140,.06)'
                          : 'background: rgba(255,255,255,.025)'">
@@ -380,6 +434,12 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                     <span v-if="row.status === 'ok'" class="mono text-[11px] font-bold text-center" style="color: var(--success)">✓</span>
                     <span v-else-if="row.status === 'err'" class="mono text-[11px] font-bold text-center" :title="row.err" style="color: var(--danger)">✗</span>
                     <span v-else class="mono text-[10px] text-center" style="color: var(--text-faint)">…</span>
+                    <button v-if="row.status !== 'ok' && !row.supplierPart.trim()"
+                            class="icon-btn !h-6 !w-6" title="识别料号"
+                            :disabled="idBusy" @click="identifyRow(row)">
+                      <ScanSearch :size="13" />
+                    </button>
+                    <span v-else />
                     <div v-if="row.manufacturerPart || row.supplierPart"
                          class="mono col-span-full -mt-0.5 truncate px-1 text-[9.5px]"
                          style="color: var(--text-faint)">
@@ -391,8 +451,15 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                 </div>
 
                 <div class="flex items-center gap-2">
+                  <span v-if="idBusy || idTotal" class="chip num !text-[11px]">
+                    识别 {{ idDone }}/{{ idTotal }}
+                  </span>
+                  <button v-if="idBusy" class="btn !py-1.5 text-xs" @click="idStop = true">停止</button>
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="emit('close')">关闭</button>
+                  <button class="btn !py-1.5 text-xs" :disabled="busy || idBusy" @click="identifyAll">
+                    <ScanSearch :size="14" /> 识别料号
+                  </button>
                   <button class="btn btn-primary" :disabled="busy" @click="importAll">
                     <ListPlus :size="15" /> 全部入库
                   </button>

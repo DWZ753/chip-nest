@@ -93,10 +93,7 @@ async function retry() {
     <main class="min-h-0 flex-1 overflow-y-auto">
       <div v-if="fatal" class="glass-panel mx-auto mt-10 w-[min(560px,90%)] rounded-3xl p-6 text-center">
         <div class="text-lg font-extrabold" style="color: var(--danger)">后端不可用</div>
-        <div class="mt-2 text-[13px] leading-relaxed" style="color: var(--text-dim)">
-          {{ fatal }}<br />
-          请先启动后端：<code class="mono">backend/.venv/Scripts/python.exe -m uvicorn app.main:app --port 8765</code>
-        </div>
+        <div class="mt-2 break-all text-[13px] leading-relaxed" style="color: var(--text-dim)">{{ fatal }}</div>
         <button class="btn btn-primary mt-5" @click="retry">重试</button>
       </div>
 
@@ -118,7 +115,12 @@ async function retry() {
       @manual="openManual"
     />
     <ManualStockDialog :open="manualOpen" @close="manualOpen = false" />
-    <AppSettingsDialog :open="settingsOpen" @close="settingsOpen = false" @reset="afterWipe" />
+    <AppSettingsDialog
+      :open="settingsOpen"
+      @close="settingsOpen = false"
+      @reset="afterWipe"
+      @refresh="refreshAfterGuide"
+    />
     <GuideOverlay
       :open="guideOpen"
       :steps="guideSteps"

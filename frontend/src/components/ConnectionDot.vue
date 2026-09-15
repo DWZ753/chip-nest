@@ -30,7 +30,7 @@ const label = computed(() => {
   if (!s.connected) return '适配器断开'
   return s.mode === 'serial'
     ? `串口已连接：${s.device ?? ''}`
-    : '模拟模式（无 ESP32）'
+    : '模拟模式'
 })
 </script>
 

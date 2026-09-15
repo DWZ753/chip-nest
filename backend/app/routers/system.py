@@ -47,6 +47,31 @@ async def data_summary(session: AsyncSession = Depends(get_session)) -> dict:
     }
 
 
+@router.post("/system/reindex-leds", response_model=schemas.ReindexResult)
+async def reindex_leds(session: AsyncSession = Depends(get_session)) -> dict:
+    """按 区 → 层 → 格 重排灯带序号。
+
+    用途：老版本自动分配灯号有 bug（多个格子共用一颗灯），重排一次让
+    灯带序号与槽位顺序严格对应，引导取料就不会点错格。
+    """
+    rows = list((await session.scalars(
+        select(Component).order_by(Component.zone, Component.layer, Component.slot)
+    )).all())
+    changed = 0
+    for index, comp in enumerate(rows):
+        if comp.led_index != index:
+            comp.led_index = index
+            changed += 1
+    if changed:
+        session.add(Transaction(
+            kind="adjust", delta=0, source="ui",
+            detail=f"重排灯带序号：{len(rows)} 个元件按 区→层→格 顺序编号（{changed} 个有变动）",
+        ))
+    await session.commit()
+    logger.info("重排灯带序号：共 {} 个元件，{} 个有变动", len(rows), changed)
+    return {"total": len(rows), "changed": changed}
+
+
 def _as_list(raw: Optional[str]) -> list:
     """JSON 文本列读成列表（脏数据容错），只为备份可读。"""
     try:

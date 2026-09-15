@@ -102,7 +102,7 @@ async function importAll() {
   for (const row of pend) {
     if (!row.posKey || taken.has(row.posKey)) {
       row.status = 'err'
-      row.err = row.posKey ? '该格已被本批占用' : '请选择放置格子'
+      row.err = row.posKey ? '该格已被本批占用' : '未选择格子'
       continue
     }
     try {

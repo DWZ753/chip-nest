@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
   AdapterStatus, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  LookupResult, ResetResult, TransactionRow,
+  LookupResult, ReindexResult, ResetResult, TransactionRow,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -108,6 +108,9 @@ export const api = {
     request<LookupResult>('/api/v1/lookup/autofill', {
       method: 'POST', body: JSON.stringify({ text }),
     }),
+
+  // 按 区→层→格 重排灯带序号（修老库里撞号的灯）
+  reindexLeds: () => request<ReindexResult>('/api/v1/system/reindex-leds', { method: 'POST' }),
 
   // 数据概况：清空按钮据此禁用（没有可清内容时不给点）
   dataSummary: () => request<DataSummary>('/api/v1/system/data-summary'),

@@ -92,6 +92,11 @@ _REGULATOR_HINT = ("ams1117", "lm317", "lm2596", "mp1584", "mp2307", "lm7805",
                    "78l05", "tps", "rt9013", "xc6206", "spx3819", "ldo",
                    "regulator", "me6211", "sy8089")
 _LCSC_RE = re.compile(r"^[Cc]?(\d{4,9})$")
+# 「数值 + 单位」整体形态（100nF / 4.7uH / 10kΩ）：这类是标称值不是型号
+_VALUE_TOKEN_RE = re.compile(
+    r"^\d+(?:\.\d+)?\s*(?:[pnuµmkKmMrR]?\s*(?:f|h|ω|Ω|ohm))$",
+    re.IGNORECASE,
+)
 _VALUE_IN_DESC_RE = re.compile(
     r"(\d+(?:\.\d+)?\s*(?:pF|nF|uF|µF|μF|mF|[kKmM]?Ω|[kK]?[rR]\b))"
 )
@@ -113,6 +118,9 @@ class Candidate:
     datasheet: str = ""
     source: str = ""
     params: dict[str, str] = field(default_factory=dict)
+    # 立创「基础库/优选库」标记：便宜好买，同等条件下优先推荐
+    basic: bool = False
+    preferred: bool = False
     score: float = 0.0
 
     @property
@@ -201,6 +209,71 @@ def _format_si(value: float, unit: str) -> str:
     return f"{value:.10g}{unit}"
 
 
+_VALUE_FACTORS = {
+    "p": 1e-12, "n": 1e-9, "u": 1e-6, "µ": 1e-6, "μ": 1e-6, "m": 1e-3,
+    "k": 1e3, "K": 1e3, "M": 1e6, "G": 1e9,
+}
+
+
+def parse_value(text: str) -> Optional[tuple[str, float]]:
+    """把「10k」「4.7kΩ」「100nF」「4R7」解析成 (类别, 数值)。
+
+    类别 R/C/L 分别为 电阻/电容/电感；认不出返回 None。
+    识别结果里带着 description（如「100mW 10kΩ 75V」），可据此判断候选是否真的对上。
+    """
+    raw = (text or "").strip().replace(" ", "")
+    if not raw:
+        return None
+    # 4R7 / 1R0：R 当小数点
+    split = re.match(r"^(\d+)R(\d+)$", raw)
+    if split:
+        return ("R", float(f"{split.group(1)}.{split.group(2)}"))
+
+    match = re.match(r"^(\d+(?:\.\d+)?)(.*)$", raw)
+    if not match:
+        return None
+    number, suffix = match.group(1), match.group(2)
+    kind: Optional[str] = None
+    factor = 1.0
+    for char in suffix:
+        if char in _VALUE_FACTORS:
+            factor = _VALUE_FACTORS[char]
+            if char in "kKMG":
+                kind = kind or "R"   # 只有倍率（10k）时按电阻理解
+        elif char in "ΩΩ":
+            kind = "R"
+        elif char in "Ff":
+            kind = "C"
+        elif char in "Hh":
+            kind = "L"
+        elif char in "WwVvAa":
+            return None   # 功率/电压/电流不是标称值
+    try:
+        value = float(number) * factor
+    except ValueError:
+        return None
+    return (kind or "R", value)
+
+
+def is_value_query(keyword: str) -> bool:
+    """查询本身是不是在问标称值（10k / 100nF 是，0603 / 100 这种不算）。"""
+    key = (keyword or "").strip()
+    if not key or _PACKAGE_RE.match(key):
+        return False
+    return bool(re.search(r"[a-zA-ZµμΩ]", key))
+
+
+def value_matches(requested: str, candidate_value: str) -> Optional[bool]:
+    """True=对得上，False=明显不是同一个值，None=信息不足不好判断。"""
+    left = parse_value(requested)
+    right = parse_value(candidate_value)
+    if left is None or right is None or left[0] != right[0]:
+        return None
+    if left[1] <= 0 or right[1] <= 0:
+        return None
+    return abs(left[1] - right[1]) / max(left[1], right[1]) < 0.02
+
+
 def _as_int(value: Any) -> int:
     try:
         return int(value)
@@ -285,6 +358,18 @@ def score_of(candidate: Candidate, keyword: str, package: Optional[str]) -> floa
             score += 30
     if package:
         score += 60 if candidate.package.upper() == package.upper() else -40
+    # 标称值是否真的对上：jlcsearch 的关键词匹配很宽松（搜 10k 会带出 510k 的料）
+    verdict = (value_matches(keyword, candidate.value)
+               if candidate.value and is_value_query(keyword) else None)
+    if verdict is True:
+        score += 90
+    elif verdict is False:
+        score -= 70
+    # 基础库/优选库：立创常备、便宜好买
+    if candidate.basic:
+        score += 35
+    if candidate.preferred:
+        score += 25
     if candidate.stock > 0:
         score += 10
     if candidate.stock > 1000:
@@ -294,6 +379,37 @@ def score_of(candidate: Candidate, keyword: str, package: Optional[str]) -> floa
     if candidate.params:
         score += 3
     return score
+
+
+def _compact(text: str) -> str:
+    return re.sub(r"[\s\-_/]", "", (text or "").lower())
+
+
+def looks_like_partno(text: str) -> bool:
+    """像型号/编号（字母数字混排且够长）才做「答非所问」过滤。
+
+    「10k 0603」「100nF 0402」这类值+封装的查询不算型号，不能按型号去过滤。
+    """
+    stripped = (text or "").strip()
+    if (_CAPACITANCE_RE.match(stripped) or _RESISTANCE_RE.match(stripped)
+            or _VALUE_TOKEN_RE.match(stripped)):
+        return False
+    key = _compact(text)
+    if len(key) < 5 or not (any(c.isalpha() for c in key) and any(c.isdigit() for c in key)):
+        return False
+    keyword, package = split_query(text)
+    if package and (len(_compact(keyword)) <= 6 or detect_intent(keyword)):
+        return False
+    return True
+
+
+def matches_keyword(candidate: Candidate, keyword: str) -> bool:
+    """候选是否真的对得上关键词（型号/编号/描述里出现过）。"""
+    key = _compact(keyword)
+    if not key:
+        return True
+    haystack = _compact(f"{candidate.mpn}{candidate.lcsc}{candidate.description}")
+    return key in haystack
 
 
 class LookupService:
@@ -356,7 +472,9 @@ class LookupService:
     # ---------- 数据源 ----------
     async def _search_jlc_category(self, intent: str, keyword: str,
                                    package: Optional[str], limit: int) -> list[Candidate]:
-        params: dict[str, Any] = {"search": keyword}
+        """分类端点：实测它的 search 参数不过滤（乱码查询也返回同一份列表），
+        所以只能拿「按热度排的整类清单」，仅当没有关键词可用时兜底。"""
+        params: dict[str, Any] = {}
         if package:
             params["package"] = package
         data = await self._get_json(f"{JLC_BASE}/{intent}/list.json", params)
@@ -365,11 +483,12 @@ class LookupService:
         rows = data.get(intent) or data.get("components") or []
         hint = _INTENT_CN.get(intent)
         return [self._from_jlc(row, source=f"jlcsearch/{intent}", hint=hint)
-                for row in rows[:limit * 3]]
+                for row in rows[:limit]]
 
     async def _search_jlc_generic(self, keyword: str, package: Optional[str],
                                   limit: int) -> list[Candidate]:
-        params = {"q": keyword, "limit": max(limit, 10), "full": "true"}
+        # 多取一些再排序：接口自己按相关度给的顺序里未必有基础库的常备料
+        params = {"q": keyword, "limit": max(limit * 2, 20), "full": "true"}
         if package:
             params["package"] = package
         data = await self._get_json(f"{JLC_BASE}/api/search", params)
@@ -438,6 +557,8 @@ class LookupService:
             price=_as_float(row.get("price") or row.get("price1")),
             source=source,
             params={k: v for k, v in list(attrs.items())[:8]},
+            basic=bool(row.get("is_basic")),
+            preferred=bool(row.get("is_preferred")),
         )
 
     def _from_lcsc_detail(self, row: dict) -> Candidate:
@@ -474,21 +595,38 @@ class LookupService:
             return []
         self.failures = 0
         package = _clean_package(package) or None
-        key = f"search:{keyword.lower()}|{package or ''}|{limit}"
+        # 缓存键带 v2：旧版本把分类端点的整类清单当结果，里面全是答非所问的料
+        key = f"search:v2:{keyword.lower()}|{package or ''}|{limit}"
         cached = await self._cache_get(session, key, CACHE_SEARCH_TTL)
         if cached is not None:
             return [Candidate.from_dict(item) for item in cached]
 
-        intent = detect_intent(keyword)
-        found: list[Candidate] = []
-        if intent:
-            found = await self._search_jlc_category(intent, keyword, package, limit)
-        if not found:
-            found = await self._search_jlc_generic(keyword, package, limit)
-        if not found:
-            found = await self._search_easyeda(keyword, limit)
+        # 通用端点是唯一真正按关键词过滤的接口，作为主来源
+        found = self._rank(self._dedupe(
+            await self._search_jlc_generic(keyword, package, limit)), keyword, package)
 
-        found = self._rank(self._dedupe(found), keyword, package)[:limit]
+        if looks_like_partno(keyword):
+            relevant = [c for c in found if matches_keyword(c, keyword)]
+            if relevant:
+                found = relevant
+            else:
+                # 型号查不到：再问一次 EasyEDA（它按型号精确检索），仍没有就保留原结果兜底
+                extra = self._rank(self._dedupe(
+                    await self._search_easyeda(keyword, max(limit, 10))), keyword, package)
+                relevant_extra = [c for c in extra if matches_keyword(c, keyword)]
+                found = relevant_extra or extra or found
+        elif not found:
+            # 值/描述类查询（10k、100nF…）通用端点没结果时按品类捞一批
+            intent = detect_intent(keyword)
+            if intent:
+                found = self._rank(self._dedupe(
+                    await self._search_jlc_category(intent, keyword, package, limit)),
+                    keyword, package)
+            if not found:
+                found = self._rank(self._dedupe(
+                    await self._search_easyeda(keyword, max(limit, 10))), keyword, package)
+
+        found = found[:limit]
         await self._cache_put(session, key, [c.to_dict() for c in found])
         return found
 

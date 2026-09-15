@@ -6,7 +6,8 @@ import httpx
 import pytest
 
 from app.services.lookup import (
-    LookupService, detect_intent, extract_lcsc, get_lookup_service, split_query,
+    LookupService, detect_intent, extract_lcsc, get_lookup_service, looks_like_partno,
+    matches_keyword, split_query,
 )
 
 RESISTOR_ROW = {
@@ -62,8 +63,29 @@ RESISTOR_DETAIL = {
 }
 
 
+STM32_ROW = {
+    "lcsc": 404010, "mfr": "STM32H750VBT6", "package": "LQFP-100(14x14)",
+    "stock": 1776, "price": 6.623,
+    "description": "-40℃~+85℃ 1.62V~3.6V 128KB 1MB 32 Bit 480MHz ARM Cortex-M7 "
+                   "Built-in FLASH LQFP-100(14x14) Microcontrollers (MCU/MPU/SOC) ROHS",
+}
+JUNK_MCU_ROW = {
+    "lcsc": 8734, "mfr": "STM32F103C8T6", "package": "LQFP-48(7x7)", "stock": 214596,
+    "description": "ARM Cortex-M3 Microcontrollers (MCU/MPU/SOC) ROHS",
+}
+STM32_EASYEDA = {
+    "number": "C404010", "mpn": "STM32H750VBT6", "package": "LQFP-100(14x14)",
+    "manufacturer": "ST", "stock": 1776, "description": "ARM Cortex-M7 MCU",
+    "price": [[1, "8.22", "8.22"]],
+}
+
+
 def ok_handler(request: httpx.Request) -> httpx.Response:
     path = request.url.path
+    if "product/search" in path:
+        kw = (request.url.params.get("keyword") or "").upper()
+        rows = [STM32_EASYEDA] if kw in ("STM32H750VBT6", "C404010") else []
+        return httpx.Response(200, json={"code": 0, "result": {"productList": rows}})
     if path.endswith("/resistors/list.json"):
         return httpx.Response(200, json={"resistors": [RESISTOR_ROW]})
     if path.endswith("/capacitors/list.json"):
@@ -74,6 +96,9 @@ def ok_handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"components": [CAP_ROW]})
         if q in ("C25804", "10K"):
             return httpx.Response(200, json={"components": [RESISTOR_ROW]})
+        if q == "STM32H750VBT6":
+            # 模拟真实情况：通用端点对冷门型号会返回不相干的同品类料
+            return httpx.Response(200, json={"components": [JUNK_MCU_ROW]})
         return httpx.Response(200, json={"components": []})
     if "product/detail" in path:
         code = request.url.params.get("productCode")
@@ -125,6 +150,21 @@ def test_detect_intent_and_lcsc():
     assert extract_lcsc("c14663") == "C14663"
     assert extract_lcsc("14663") == "C14663"
     assert extract_lcsc("10k 0603") is None
+
+
+def test_partno_and_relevance_helpers():
+    assert looks_like_partno("STM32H750VBT6") is True
+    assert looks_like_partno("C14663") is True
+    assert looks_like_partno("10k 0603") is False
+    assert looks_like_partno("100nF") is False
+
+    from app.services.lookup import Candidate
+    hit = Candidate(lcsc="C404010", mpn="STM32H750VBT6")
+    miss = Candidate(lcsc="C8734", mpn="STM32F103C8T6")
+    assert matches_keyword(hit, "STM32H750VBT6") is True
+    assert matches_keyword(miss, "STM32H750VBT6") is False
+    described = Candidate(lcsc="C25804", mpn="0603WAF1002T5E", description="RES 10kΩ ±1% 0603")
+    assert matches_keyword(described, "10kΩ") is True
 
 
 async def test_autofill_keyword_fills_fields(client, service_with_mock):
@@ -179,27 +219,46 @@ async def test_search_result_is_cached(client, service_with_mock):
 
     assert first.json()["best"]["lcsc"] == second.json()["best"]["lcsc"]
     assert len(calls) == after_first, "第二次仍打了网络"
-    # 首次：分类搜索 1 次 + 详情补全 1 次
-    assert sum(1 for path in calls if path.endswith("list.json")) == 1
+    # 首次：通用搜索 1 次 + 详情补全 1 次（分类端点不再参与）
+    assert sum(1 for path in calls if path.endswith("/api/search")) == 1
     assert sum(1 for path in calls if "product/detail" in path) == 1
+    assert not any(path.endswith("list.json") for path in calls)
 
 
-async def test_category_endpoint_failure_falls_back(client, app_client_override):
-    """分类端点挂了 → 自动降级到通用搜索端点。"""
+async def test_partno_query_drops_irrelevant_hits(client, service_with_mock):
+    """型号查询：通用端点返回同品类的别的料时，不能答非所问（STM32H750VBT6）。"""
+    _service, calls = service_with_mock
+    resp = await client.post("/api/v1/lookup/autofill", json={"text": "STM32H750VBT6"})
+    body = resp.json()
+
+    assert body["best"] is not None
+    assert body["best"]["mpn"] == "STM32H750VBT6"
+    assert body["best"]["lcsc"] == "C404010"
+    assert body["best"]["package"] == "LQFP-100(14x14)"
+    assert all(c["mpn"] != "STM32F103C8T6" for c in body["candidates"]), "混进了不相干的料"
+    # 通用端点没给出对得上的型号时才去问 EasyEDA
+    assert any("product/search" in path for path in calls)
+
+
+async def test_value_query_falls_back_to_category(client, app_client_override):
+    """值类查询且通用端点没结果时，才用分类端点按品类兜底。"""
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/search"):
+            return httpx.Response(200, json={"components": []})
         if request.url.path.endswith("/resistors/list.json"):
-            return httpx.Response(500, text="boom")
-        return ok_handler(request)
+            return httpx.Response(200, json={"resistors": [RESISTOR_ROW]})
+        if "product/detail" in request.url.path:
+            return httpx.Response(200, json=RESISTOR_DETAIL)
+        return httpx.Response(404, json={})
 
     app_client_override(get_lookup_service, lambda: make_service(handler, calls))
     resp = await client.post("/api/v1/lookup/autofill", json={"text": "10k 0603"})
     body = resp.json()
 
-    assert body["best"] is not None
-    assert any("list.json" in p for p in calls)
-    assert any(p.endswith("/api/search") for p in calls)
+    assert body["best"] is not None and body["best"]["lcsc"] == "C25804"
+    assert any(path.endswith("list.json") for path in calls)
 
 
 async def test_offline_reports_clearly(client, app_client_override):

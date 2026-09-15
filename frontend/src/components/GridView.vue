@@ -260,17 +260,12 @@ async function fixOrphans() {
           <Trash2 :size="13" /> {{ confirmDelete ? '确认删除？' : '删除所选' }}
         </button>
         <button class="btn !py-1.5 text-xs" :disabled="selectedIds.size === 0"
-                title="清空所选元件的供应商料号（工程专用编号）" @click="clearSupplierParts">
+                title="清空所选元件的供应商料号" @click="clearSupplierParts">
           {{ confirmClearSupplier ? '确认清空？' : '清除供应商料号' }}
         </button>
         <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
       </template>
       <template v-else>
-        <span class="text-[11.5px]" style="color: var(--text-faint)">
-          {{ moveMode
-            ? (picked ? '已拿起「' + picked.name + '」：点虚线空格放下' : '点一个格子拿起，再点空格放下')
-            : '点格子可编辑；搬家请先点「移动」' }}
-        </span>
         <button class="btn !py-1.5 text-xs" :class="moveMode ? 'btn-primary' : ''"
                 title="搬家：点一个格子拿起，再点空格放下" @click="toggleMove">
           <Move :size="13" /> {{ moveMode ? '退出移动' : '移动' }}
@@ -281,37 +276,9 @@ async function fixOrphans() {
       </template>
     </div>
 
-    <!-- 搬家进行中：提示可放下的位置 -->
+    <!-- 搬家结果 -->
     <div
-      v-if="moveMode"
-      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
-      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
-    >
-      <Move :size="16" style="color: var(--accent)" />
-      <template v-if="picked">
-        <span class="text-[13px] font-semibold">
-          已拿起「{{ picked.name }}」（{{ posText({ zone: picked.zone, layer: picked.layer, slot: picked.slot }) }}）
-        </span>
-        <span class="text-[12px]" style="color: var(--text-dim)">
-          点任意虚线空格放下；再点它自己或按 Esc 放回原处
-        </span>
-      </template>
-      <template v-else-if="moveNote">
-        <Check :size="16" style="color: var(--success)" />
-        <span class="text-[13px] font-semibold">{{ moveNote }}</span>
-        <span class="text-[12px]" style="color: var(--text-dim)">继续点格子就能接着搬</span>
-      </template>
-      <template v-else>
-        <span class="text-[13px] font-semibold">移动模式</span>
-        <span class="text-[12px]" style="color: var(--text-dim)">
-          点一个格子把它拿起来，再点一个虚线空格放下；按 Esc 或点「退出移动」结束
-        </span>
-      </template>
-    </div>
-
-    <!-- 搬家结果提示 -->
-    <div
-      v-else-if="moveNote"
+      v-if="moveNote"
       class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
       style="border-color: color-mix(in srgb, var(--accent) 45%, var(--line))"
     >
@@ -328,7 +295,7 @@ async function fixOrphans() {
     >
       <TriangleAlert :size="18" style="color: var(--warn)" />
       <span class="text-[13px] font-semibold">
-        {{ bins.orphanComps.length }} 个元件超出当前网格（游离区）
+        {{ bins.orphanComps.length }} 个元件超出当前网格
       </span>
       <span class="chip" v-for="c in bins.orphanComps.slice(0, 6)" :key="c.id">
         {{ c.name }}
@@ -417,9 +384,7 @@ async function fixOrphans() {
                 v-else
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
                 :class="{ 'move-ready': !!picked }"
-                :title="moveMode
-                  ? (picked ? '放这里：把元件搬到这个空位' : '请先点一个格子拿起')
-                  : '空位：点击新建元件'"
+                :title="picked ? '放这里' : '空位'"
                 @click="onEmptyClick({ zone, layer, slot: slot - 1 })"
               >
                 <Plus :size="20" />

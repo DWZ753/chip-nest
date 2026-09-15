@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
+import { Check, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig, LookupCandidate } from '../api/types'
@@ -67,6 +67,8 @@ const lookupNote = ref<string | null>(null)
 const candidates = ref<LookupCandidate[]>([])
 const datasheet = ref('')
 const appliedParams = ref<Record<string, string>>({})
+// 当前选中的候选下标（-1=没选）：点候选要立刻看到选中的是哪一条
+const pickedIndex = ref(-1)
 
 function resetLookup(seed = '') {
   lookupText.value = seed
@@ -76,18 +78,22 @@ function resetLookup(seed = '') {
   candidates.value = []
   datasheet.value = ''
   appliedParams.value = {}
+  pickedIndex.value = -1
 }
 
-function applyCandidate(c: LookupCandidate) {
-  if (c.name) form.name = c.name
-  if (c.value) form.value = c.value
-  if (c.package) form.package = c.package
-  if (c.mpn) form.manufacturer_part = c.mpn
-  if (c.lcsc) form.supplier_part = c.lcsc
+function applyCandidate(c: LookupCandidate, index = -1) {
+  // 换一条候选就把五个字段整体刷新一遍（该条没有的字段清空），
+  // 否则会出现"点了另一条但界面没变"的错觉
+  form.name = c.name || ''
+  form.value = c.value || ''
+  form.package = c.package || ''
+  form.manufacturer_part = c.mpn || ''
+  form.supplier_part = c.lcsc || ''
+  pickedIndex.value = index
   datasheet.value = c.datasheet || ''
   appliedParams.value = c.params ?? {}
   const tag = [c.lcsc, c.mpn].filter(Boolean).join(' ')
-  lookupNote.value = `已填入 ${tag}${c.source ? '（来源 ' + c.source + '）' : ''}`
+  lookupNote.value = tag ? `已填入 ${tag}` : '已填入'
   lookupError.value = null
 }
 
@@ -102,14 +108,12 @@ async function runLookup() {
     const res = await api.lookupAutofill(text)
     candidates.value = res.candidates ?? []
     if (candidates.value.length) {
-      applyCandidate(candidates.value[0])
+      applyCandidate(candidates.value[0], 0)
       if (candidates.value.length > 1) {
-        lookupNote.value = (lookupNote.value ?? '') + `，另有 ${candidates.value.length - 1} 个候选可选`
+        lookupNote.value = (lookupNote.value ?? '') + `，共 ${candidates.value.length} 个候选`
       }
     } else {
-      lookupError.value = res.online
-        ? '没查到，换个写法再试（如「10k 0603」「C14663」「STM32F103C8T6」）'
-        : '联网失败：检查网络后重试（离线也能手工填写）'
+      lookupError.value = res.online ? '没查到对应元件' : '联网失败'
     }
   } catch (e) {
     lookupError.value = e instanceof Error ? e.message : String(e)
@@ -356,7 +360,6 @@ function close() {
                   <div class="flex items-center gap-2">
                     <Sparkles :size="14" style="color: var(--accent)" />
                     <span class="text-[12.5px] font-extrabold">联网识别</span>
-                    <span class="text-[11px]" style="color: var(--text-faint)">料号 / 描述 / 立创编号</span>
                   </div>
                   <div class="mt-2 flex items-center gap-2">
                     <input v-model="lookupText" class="input mono !py-1.5" maxlength="80"
@@ -387,13 +390,15 @@ function close() {
                   <div v-if="candidates.length > 1"
                        class="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto pr-1">
                     <button v-for="(c, i) in candidates" :key="(c.lcsc || 'x') + i"
-                            class="rounded-xl px-2.5 py-1.5 text-left text-[11.5px]"
-                            :style="'border: 1px solid ' + (i === 0
-                              ? 'color-mix(in srgb, var(--accent) 55%, var(--line))' : 'var(--line)')"
-                            @click="applyCandidate(c)">
+                            class="rounded-xl px-2.5 py-1.5 text-left text-[11.5px] transition-colors"
+                            :style="pickedIndex === i
+                              ? 'border: 1.5px solid var(--accent); background: var(--accent-dim)'
+                              : 'border: 1px solid var(--line)'"
+                            @click="applyCandidate(c, i)">
                       <div class="flex items-center gap-2">
+                        <Check v-if="pickedIndex === i" :size="12" style="color: var(--accent)" />
                         <span class="mono font-bold" style="color: var(--accent)">{{ c.lcsc || '—' }}</span>
-                        <span class="truncate font-semibold">{{ c.name }}</span>
+                        <span class="truncate" :class="pickedIndex === i ? 'font-extrabold' : 'font-semibold'">{{ c.name }}</span>
                         <span class="num ml-auto flex-shrink-0" style="color: var(--text-faint)">存 {{ c.stock }}</span>
                       </div>
                       <div class="truncate" style="color: var(--text-dim)">

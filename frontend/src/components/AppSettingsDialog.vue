@@ -3,7 +3,9 @@ import { computed, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { DatabaseZap, MonitorCog, Moon, Palette, Sun, Trash2, X } from '@lucide/vue'
+import {
+  DatabaseZap, Lamp, ListOrdered, MonitorCog, Moon, Palette, Sun, Trash2, X,
+} from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { DataSummary, ResetResult } from '../api/types'
@@ -11,7 +13,7 @@ import { useConnectionStore } from '../stores/connection'
 import { useTheme } from '../stores/theme'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; reset: [] }>()
+const emit = defineEmits<{ close: []; reset: []; refresh: [] }>()
 const connection = useConnectionStore()
 const { dark, setLight, fontScale, setFontScale, FONT_STEPS } = useTheme()
 const SCALE_LABELS = ['小', '中', '大', '特大']
@@ -20,6 +22,29 @@ const MODE_TEXT = {
   serial: '串口模式',
   mock: '模拟模式',
 } as Record<string, string>
+
+// ---- 灯带序号重排 ----
+const ledBusy = ref(false)
+const ledNote = ref<string | null>(null)
+const ledError = ref<string | null>(null)
+
+async function reindexLeds() {
+  if (ledBusy.value) return
+  ledBusy.value = true
+  ledNote.value = null
+  ledError.value = null
+  try {
+    const res = await api.reindexLeds()
+    ledNote.value = res.changed
+      ? `已重排 ${res.total} 个元件，${res.changed} 个序号有变动`
+      : `${res.total} 个元件序号本来就是对的`
+    emit('refresh')
+  } catch (e) {
+    ledError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    ledBusy.value = false
+  }
+}
 
 // ---- 清空所有数据 ----
 // 确认词与后端 app/routers/system.py 的 RESET_CONFIRM_WORD 必须一致
@@ -169,6 +194,18 @@ watch(() => props.open, (open) => {
                   </div>
                 </section>
 
+                <!-- 灯带序号：按位置重排，修老库里撞号的灯 -->
+                <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
+                    <Lamp :size="15" style="color: var(--accent-strong)" /> 灯带序号
+                  </div>
+                  <button class="btn !py-1.5 text-xs" :disabled="ledBusy" @click="reindexLeds">
+                    <ListOrdered :size="14" class="mr-1 inline" />按位置重排
+                  </button>
+                  <div v-if="ledNote" class="mt-2 text-[12px] font-semibold" style="color: var(--success)">{{ ledNote }}</div>
+                  <div v-if="ledError" class="mt-2 text-[12px] font-semibold" style="color: var(--danger)">{{ ledError }}</div>
+                </section>
+
                 <!-- 数据：一键清空回到干净初始状态 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
@@ -176,15 +213,9 @@ watch(() => props.open, (open) => {
                   </div>
 
                   <template v-if="!confirming">
-                    <p class="mb-3 text-[12px] leading-relaxed" style="color: var(--text-dim)">
-                      清空全部元件与操作流水，回到刚装好的状态。清空前会自动留一份备份文件，需要时能找回。
-                    </p>
                     <button class="btn btn-danger" :disabled="!canWipe" @click="startConfirm">
                       <Trash2 :size="14" class="mr-1 inline" />清空所有数据
                     </button>
-                    <div v-if="summary && summary.empty" class="mt-2 text-[12px]" style="color: var(--text-faint)">
-                      当前没有元件与操作流水，不需要清空。
-                    </div>
 
                     <div v-if="wiped" class="mt-3 rounded-xl px-3 py-2 text-[12px] leading-relaxed"
                          style="background: var(--surface-2); border: 1px solid var(--line)">
@@ -199,7 +230,7 @@ watch(() => props.open, (open) => {
                   <template v-else>
                     <div class="rounded-xl p-3 text-[12px] leading-relaxed"
                          style="background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.34)">
-                      <div class="font-bold" style="color: var(--danger)">清空后无法撤销（会先自动备份）。</div>
+                      <div class="font-bold" style="color: var(--danger)">清空不可撤销，会先自动备份</div>
                       <div class="mt-1" style="color: var(--text-dim)">
                         将删除 {{ summary?.components ?? 0 }} 个元件、{{ summary?.transactions ?? 0 }} 条操作流水。
                       </div>
