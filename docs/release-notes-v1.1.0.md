@@ -60,7 +60,7 @@
 ```
 ChipNest-Setup-1.1.0.exe
   size   : 138.6 MB
-  sha256 : 3c60321689353f7a9257815ecba8757d412010525c2f3252657d89ea2b9cb35a
+  sha256 : bc58eabaab566d3223fe19a99aa24814bb5aaae7c5bd714fa7794dce130a80da
 ```
 
 ## 说明

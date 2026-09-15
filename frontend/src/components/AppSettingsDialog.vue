@@ -238,7 +238,7 @@ watch(() => props.open, (open) => {
                         <input v-model="resetLayout" type="checkbox" style="accent-color: var(--danger)" />
                         <span>同时把仓库布局恢复为 1 区 × 3 层 × 1 行 4 列</span>
                       </label>
-                      <div class="mt-3" style="color: var(--text-dim)">请输入「{{ CONFIRM_WORD }}」两个字确认：</div>
+                      <div class="field-label mt-3">确认词</div>
                       <input v-model="confirmText" class="input mt-1.5" :placeholder="CONFIRM_WORD"
                              maxlength="4" @keyup.enter="doReset" />
                       <div v-if="resetError" class="mt-2 font-bold" style="color: var(--danger)">{{ resetError }}</div>

@@ -67,7 +67,7 @@ async function pickNext() {
   } catch (e) {
     phase.value = 'abort'
     message.value = e instanceof ApiError
-      ? `${e.message}（余量 ${e.available ?? '?'}）—— 请先补货再继续引导`
+      ? e.message
       : e instanceof Error ? e.message : String(e)
     bins.setGuidePosition(null)
   } finally {
@@ -128,7 +128,7 @@ function done() {
                 </span>
               </div>
 
-              <div class="my-5 text-2xl font-black text-amber-300">请取走 × {{ step.quantity }}</div>
+              <div class="my-5 text-2xl font-black text-amber-300">取走 × {{ step.quantity }}</div>
 
               <div class="flex items-center justify-center gap-3">
                 <button class="btn !rounded-full !px-6 !py-3 text-base font-extrabold" :disabled="picking"

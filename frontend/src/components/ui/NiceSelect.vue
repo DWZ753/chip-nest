@@ -13,7 +13,7 @@ const props = withDefaults(defineProps<{
   options: SelectOption[]
   placeholder?: string
   disabled?: boolean
-}>(), { placeholder: '请选择', disabled: false })
+}>(), { placeholder: '未选择', disabled: false })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string | number | null): void

@@ -224,7 +224,7 @@ function fail(e: unknown) {
 
 async function save() {
   const name = form.name.trim()
-  if (!name) { errorMsg.value = '请填写元件名称'; return }
+  if (!name) { errorMsg.value = '名称为空'; return }
   busy.value = true
   errorMsg.value = null
   try {

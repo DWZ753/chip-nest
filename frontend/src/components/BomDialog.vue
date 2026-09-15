@@ -76,7 +76,7 @@ function parseKey(k: string): BinPosition {
 
 // ---------- 解析/规划 ----------
 async function runParse() {
-  if (!text.value.trim()) { errorMsg.value = '请先粘贴 BOM 文本或选择 xlsx 文件'; return }
+  if (!text.value.trim()) { errorMsg.value = '没有 BOM 内容'; return }
   busy.value = true
   errorMsg.value = null
   try {
@@ -120,14 +120,14 @@ async function runPlan() {
     const source = text.value.trim()
       ? text.value
       : (parsed.value?.lines ?? []).map((l) => l.raw).join('\n')
-    if (!source.trim()) { errorMsg.value = '请先粘贴/导入 BOM'; return }
+    if (!source.trim()) { errorMsg.value = '没有 BOM 内容'; return }
     plan.value = await api.planBom(source)
   } catch (e) { errorMsg.value = errText(e) } finally { busy.value = false }
 }
 
 // ---------- 整表入库（购买清单） ----------
 function openImportList() {
-  if (!parsed.value?.lines.length) { errorMsg.value = '请先解析/导入 BOM'; return }
+  if (!parsed.value?.lines.length) { errorMsg.value = '没有解析结果'; return }
   freeOptions.value = bins.freeSlots()
   rows.value = parsed.value.lines.map((l, i) => {
     const pos = freeOptions.value[i]
