@@ -16,8 +16,8 @@ const props = defineProps<{
   picked?: boolean
   /** 移动模式下手上拿着别的格子：本格可作为互换目标 */
   swapReady?: boolean
-  /** 跨格显示的列数（该物料占用的相邻格合成一张卡） */
-  span?: number
+  /** 网格摆位（跨格卡用：显式指定行列与跨度，避免挤错位） */
+  gridStyle?: Record<string, string>
   /** 共用卡：这一格是某个物料的附加占用格 */
   shared?: boolean
 }>()
@@ -170,9 +170,6 @@ const bandWidth = computed(() => {
   return Math.min(100, Math.round((q / t) * 100)) + '%'
 })
 
-// 共用卡上标出"主格"在哪：1区/1层/0格（与流水、引导条同一口径）
-const primaryText = computed(() => `${props.comp.zone}区/${props.comp.layer}层/${props.comp.slot}格`)
-
 const title = computed(() => {
   const base = [props.comp.name, props.comp.value, props.comp.package].filter(Boolean)
   const tags = props.comp.tags ?? []
@@ -189,7 +186,7 @@ const title = computed(() => {
               'card-picked': picked,
               'card-shared': shared,
               'swap-ready': swapReady && !picked }"
-    :style="span && span > 1 ? { gridColumn: 'span ' + span } : undefined"
+    :style="gridStyle"
     :title="title"
     role="button"
     tabindex="0"
@@ -211,11 +208,10 @@ const title = computed(() => {
       </span>
     </div>
 
-    <!-- 共用卡：这一格是别处的附加占用格，只标出主格位置 -->
-    <div v-if="shared" class="mono mt-0.5 flex items-center gap-1 text-[10px]"
-         style="color: var(--text-faint)">
-      <Link2 :size="10" />
-      <span>{{ primaryText }}</span>
+    <!-- 共用卡：这一格是同一物料的附加存放格 -->
+    <div v-if="shared" class="mt-0.5 flex items-center gap-1">
+      <Link2 :size="11" style="color: var(--text-faint)" />
+      <span class="chip !px-1.5 !text-[9.5px]" style="color: var(--text-dim)">共用</span>
     </div>
 
     <!-- 统一显示链：字段与标签同一序列，单行自适应，放不下折叠为 +N -->

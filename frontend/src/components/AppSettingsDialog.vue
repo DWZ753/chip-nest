@@ -194,10 +194,9 @@ watch(() => props.open, (open) => {
                 <!-- 格子显示：占用格是合并成一张大卡，还是各显示一张共用卡 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">
-                    <Link2 :size="14" style="color: var(--accent-strong)" /> 格子显示
+                    <Link2 :size="14" style="color: var(--accent-strong)" /> 卡片
                   </div>
                   <div class="flex flex-wrap items-center gap-3">
-                    <span class="text-[12.5px]" style="color: var(--text-dim)">同一物料的相邻占用格</span>
                     <button
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="mergeSlots ? '' : 'opacity-55'"

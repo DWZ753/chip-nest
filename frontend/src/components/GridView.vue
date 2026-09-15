@@ -106,6 +106,11 @@ function onCard(comp: ComponentItem, isShared = false, pos?: BinPosition) {
     return
   }
   if (moveMode.value) {
+    if (isShared && pos) {
+      toggleSlotPick(comp, pos)
+      return
+    }
+    if (pickedSlot.value) return          // 手上拿着共用格时，点有料格子不做事
     if (picked.value && picked.value.id !== comp.id) void swapWith(comp)
     else pickCard(comp)
     return
@@ -186,6 +191,7 @@ function enterMove() {
 function exitMove() {
   moveMode.value = false
   pickedId.value = null
+  pickedSlot.value = null
 }
 
 function toggleMove() {
@@ -201,6 +207,7 @@ function pickCard(comp: ComponentItem) {
     return
   }
   pickedId.value = comp.id
+  pickedSlot.value = null
   moveNote.value = null
 }
 
@@ -220,9 +227,23 @@ async function swapWith(target: ComponentItem) {
 
 // 移动模式下点空格：放下手里的那张卡
 async function placeAt(pos: BinPosition) {
+  // 手里拿的是"共用格"：把它从旧格子挪到这一格（库存与元件都不变）
+  const held = pickedSlot.value
+  if (held) {
+    try {
+      await bins.addSlot(held.compId, pos)
+      await bins.removeSlot(held.compId, held.pos)
+      pickedSlot.value = null
+      flashNote(`已把共用格从 ${posText(held.pos)} 挪到 ${posText(pos)}`)
+    } catch (e) {
+      pickedSlot.value = null
+      flashNote(`挪动失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+    return
+  }
   const comp = picked.value
   if (!comp) {
-    flashNote('先点一个格子把它拿起来，再点这个空格放下')
+    flashNote('未拿起格子')
     return
   }
   const from = { zone: comp.zone, layer: comp.layer, slot: comp.slot }
@@ -259,6 +280,27 @@ const mergeSource = computed<ComponentItem | null>(
 // 移动模式拿着的是"要搬的卡"，合并模式拿着的是"主格"，视觉上都是这张卡被选中
 const heldId = computed(() =>
   moveMode.value ? pickedId.value : mergeMode.value ? mergeSourceId.value : null)
+
+// 移动模式下单独拿起的"共用格"（附加格）：它是一格，不是一个元件
+const pickedSlot = ref<{ compId: number; pos: BinPosition } | null>(null)
+
+function isSlotHeld(cell: CellEntry): boolean {
+  const held = pickedSlot.value
+  return !!held && !!cell.comp && held.compId === cell.comp.id
+    && positionKey(held.pos) === positionKey(cell.pos)
+}
+
+function toggleSlotPick(comp: ComponentItem, pos: BinPosition) {
+  const held = pickedSlot.value
+  if (held && held.compId === comp.id && positionKey(held.pos) === positionKey(pos)) {
+    pickedSlot.value = null
+    flashNote(`已放回 ${posText(pos)}`)
+    return
+  }
+  pickedId.value = null
+  moveNote.value = null
+  pickedSlot.value = { compId: comp.id, pos }
+}
 
 function enterMerge() {
   if (batchMode.value) exitBatch()
@@ -318,6 +360,12 @@ function onEsc(ev: KeyboardEvent) {
     else exitMerge()
     return
   }
+  if (pickedSlot.value) {
+    const pos = pickedSlot.value.pos
+    pickedSlot.value = null
+    flashNote(`已放回 ${posText(pos)}`)
+    return
+  }
   if (pickedId.value !== null) {
     const name = picked.value?.name ?? ''
     pickedId.value = null
@@ -335,49 +383,85 @@ interface CellEntry {
   pos: BinPosition
   kind: 'card' | 'shared' | 'empty'
   comp?: ComponentItem
-  span: number
+  col: number
+  row: number
+  colSpan: number
+  rowSpan: number
 }
 
-// 一层的渲染列表：主格出卡片；同一物料在同一行里连续的占用格按设置合成为一张跨格卡，
-// 否则每个附加格出一张共用卡；没被占用的出空位。
+// 每个格子都按自己的行列显式摆位（跨格卡也不会把后面的格子挤错位）
+function cellStyle(cell: CellEntry): Record<string, string> {
+  return {
+    gridColumn: `${cell.col + 1} / span ${cell.colSpan}`,
+    gridRow: `${cell.row + 1} / span ${cell.rowSpan}`,
+  }
+}
+
+// 一层的渲染列表：同一物料的占用格若能拼成一个完整矩形（横着、竖着、方块都行），
+// 就合成一张跨格卡；拼不成矩形的仍是一格一张（主格卡片 + 其余共用卡）。
 function layerCells(zone: number, layer: number): CellEntry[] {
   const [rows, cols] = zoneGrid(bins.layout, zone)
   const cells = rows * cols
   const owner = bins.slotOwner
   const out: CellEntry[] = []
-  let s = 0
-  while (s < cells) {
-    const info = owner[positionKey({ zone, layer, slot: s })]
+  const eaten = new Set<number>()
+
+  const ownerAt = (slot: number) => owner[positionKey({ zone, layer, slot })]
+  const slotAt = (row: number, col: number) => row * cols + col
+
+  // 1) 每个元件在本层占的格子
+  const groups = new Map<number, { comp: ComponentItem; slots: number[] }>()
+  for (let s = 0; s < cells; s++) {
+    const info = ownerAt(s)
+    if (!info) continue
+    const item = groups.get(info.comp.id) ?? { comp: info.comp, slots: [] }
+    item.slots.push(s)
+    groups.set(info.comp.id, item)
+  }
+
+  // 2) 能拼成矩形的合成一张跨格卡
+  if (mergeView.value && !mergeMode.value) {
+    for (const { comp, slots } of groups.values()) {
+      if (slots.length < 2) continue
+      const r0 = Math.min(...slots.map((s) => Math.floor(s / cols)))
+      const r1 = Math.max(...slots.map((s) => Math.floor(s / cols)))
+      const c0 = Math.min(...slots.map((s) => s % cols))
+      const c1 = Math.max(...slots.map((s) => s % cols))
+      if ((r1 - r0 + 1) * (c1 - c0 + 1) !== slots.length) continue  // 有空缺就不合并
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) eaten.add(slotAt(r, c))
+      }
+      const primaryHere = comp.zone === zone && comp.layer === layer
+      out.push({
+        key: `c${zone}-${layer}-${r0}-${c0}`,
+        pos: {
+          zone, layer,
+          slot: primaryHere ? comp.slot : slotAt(r0, c0),
+        },
+        kind: 'card', comp, row: r0, col: c0,
+        colSpan: c1 - c0 + 1, rowSpan: r1 - r0 + 1,
+      })
+    }
+  }
+
+  // 3) 其余格子：主格出卡片、附加格出共用卡、空位出空位
+  for (let s = 0; s < cells; s++) {
+    if (eaten.has(s)) continue
+    const row = Math.floor(s / cols)
+    const col = s % cols
+    const info = ownerAt(s)
     if (!info) {
-      out.push({ key: `e${zone}-${layer}-${s}`, pos: { zone, layer, slot: s }, kind: 'empty', span: 1 })
-      s += 1
+      out.push({
+        key: `e${zone}-${layer}-${s}`, pos: { zone, layer, slot: s },
+        kind: 'empty', row, col, colSpan: 1, rowSpan: 1,
+      })
       continue
     }
-    const row = Math.floor(s / cols)
-    let end = s
-    while (
-      end + 1 < cells
-      && Math.floor((end + 1) / cols) === row
-      && owner[positionKey({ zone, layer, slot: end + 1 })]?.comp.id === info.comp.id
-    ) end += 1
-
-    const primarySlot = info.comp.zone === zone && info.comp.layer === layer ? info.comp.slot : -1
-    const hasPrimary = primarySlot >= s && primarySlot <= end
-    if (mergeView.value && !mergeMode.value && end > s && hasPrimary) {
-      out.push({
-        key: `c${zone}-${layer}-${s}`, pos: { zone, layer, slot: primarySlot },
-        kind: 'card', comp: info.comp, span: end - s + 1,
-      })
-    } else {
-      for (let i = s; i <= end; i++) {
-        const item = owner[positionKey({ zone, layer, slot: i })]!
-        out.push({
-          key: `s${zone}-${layer}-${i}`, pos: { zone, layer, slot: i },
-          kind: item.primary ? 'card' : 'shared', comp: item.comp, span: 1,
-        })
-      }
-    }
-    s = end + 1
+    out.push({
+      key: `s${zone}-${layer}-${s}`, pos: { zone, layer, slot: s },
+      kind: info.primary ? 'card' : 'shared', comp: info.comp,
+      row, col, colSpan: 1, rowSpan: 1,
+    })
   }
   return out
 }
@@ -441,6 +525,24 @@ async function fixOrphans() {
         {{ picker.error }}
       </span>
       <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="picker.cancel()">取消</button>
+    </div>
+
+    <!-- 移动中：拿着什么，一眼可见 -->
+    <div
+      v-if="moveMode && (picked || pickedSlot)"
+      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
+      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
+    >
+      <Move :size="16" style="color: var(--accent)" />
+      <span class="chip" style="color: var(--accent); border-color: var(--accent)">移动中</span>
+      <span v-if="picked" class="text-[13px] font-semibold">
+        已拿起「{{ picked.name }}」（{{ posText({ zone: picked.zone, layer: picked.layer, slot: picked.slot }) }}）
+      </span>
+      <span v-else-if="pickedSlot" class="text-[13px] font-semibold">
+        拿着共用格 {{ posText(pickedSlot.pos) }}
+      </span>
+      <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">{{ moveNote }}</span>
+      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="exitMove">退出移动</button>
     </div>
 
     <!-- 合并格：选一个主格，再点空格并进来；点共用卡解除 -->
@@ -556,23 +658,24 @@ async function fixOrphans() {
               <BinCard
                 v-if="cell.kind !== 'empty'"
                 :comp="cell.comp!"
-                :span="cell.span"
+                :grid-style="cellStyle(cell)"
                 :shared="cell.kind === 'shared'"
                 :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
                 :guide="bins.guideKey === positionKey(cell.pos)"
                 :selectable="batchMode"
                 :selected="batchMode && selectedIds.has(cell.comp!.id)"
                 :show-supplier="batchMode"
-                :picked="heldId === cell.comp!.id"
-                :swap-ready="!!picked && pickedId !== cell.comp!.id"
+                :picked="cell.kind === 'shared' ? isSlotHeld(cell) : heldId === cell.comp!.id"
+                :swap-ready="!pickedSlot && !!picked && pickedId !== cell.comp!.id"
                 @click="onCard($event, cell.kind === 'shared', cell.pos)"
               />
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
                 v-else
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
-                :class="{ 'move-ready': !!heldId || picker.active }"
-                :title="picker.active || heldId ? '选它' : '空位'"
+                :style="cellStyle(cell)"
+                :class="{ 'move-ready': !!heldId || !!pickedSlot || picker.active }"
+                :title="picker.active || heldId || pickedSlot ? '选它' : '空位'"
                 @click="onEmptyClick(cell.pos)"
               >
                 <Plus :size="20" />
