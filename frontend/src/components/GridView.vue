@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, Move, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
+import { Check, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { ComponentItem } from '../api/types'
 import {
   positionKey, useBinsStore, zoneGrid, zoneLayers, zoneName, type BinPosition,
 } from '../stores/bins'
+import { usePickerStore } from '../stores/picker'
 import { useTheme } from '../stores/theme'
 import BinCard from './BinCard.vue'
 
@@ -90,6 +91,10 @@ function cancelZoneEdit() {
 }
 
 function onCard(comp: ComponentItem) {
+  if (picker.active) {
+    picker.warn('该格已被占用')
+    return
+  }
   if (batchMode.value) {
     toggleSelect(comp)
     return
@@ -141,6 +146,7 @@ async function deleteSelected() {
 }
 
 const bins = useBinsStore()
+const picker = usePickerStore()
 const { mergeSlots: mergeView } = useTheme()
 
 // ---------- 移动模式：点按拿起 → 点空格放下 ----------
@@ -229,12 +235,20 @@ async function placeAt(pos: BinPosition) {
 }
 
 function onEmptyClick(pos: BinPosition) {
+  if (picker.active) {          // 选格模式：点空格即选中并回到刚才的窗口
+    picker.confirm(pos)
+    return
+  }
   if (moveMode.value) void placeAt(pos)
   else emit('create', pos)
 }
 
 function onEsc(ev: KeyboardEvent) {
   if (ev.key !== 'Escape') return
+  if (picker.active) {
+    picker.cancel()
+    return
+  }
   if (pickedId.value !== null) {
     const name = picked.value?.name ?? ''
     pickedId.value = null
@@ -340,6 +354,20 @@ async function fixOrphans() {
           ☑ 多选
         </button>
       </template>
+    </div>
+
+    <!-- 选格中：点一个空格 -->
+    <div
+      v-if="picker.active"
+      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
+      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
+    >
+      <Crosshair :size="16" style="color: var(--accent)" />
+      <span class="chip" style="color: var(--accent); border-color: var(--accent)">选格中</span>
+      <span v-if="picker.error" class="text-[12.5px] font-semibold" style="color: var(--danger)">
+        {{ picker.error }}
+      </span>
+      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="picker.cancel()">取消</button>
     </div>
 
     <!-- 搬家结果 -->
@@ -449,8 +477,8 @@ async function fixOrphans() {
               <button
                 v-else
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
-                :class="{ 'move-ready': !!picked }"
-                :title="picked ? '放这里' : '空位'"
+                :class="{ 'move-ready': !!picked || picker.active }"
+                :title="picker.active || picked ? '选它' : '空位'"
                 @click="onEmptyClick(cell.pos)"
               >
                 <Plus :size="20" />

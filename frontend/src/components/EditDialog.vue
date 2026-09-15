@@ -3,11 +3,14 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { Check, Link2, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
+import {
+  Check, Crosshair, Link2, Minus, Pencil, Plus, Sparkles, Trash2, X,
+} from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig, LookupCandidate, SlotRef } from '../api/types'
 import { useBinsStore, zoneGrid, zoneLayers, type BinPosition } from '../stores/bins'
+import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
 import { ArrowLeftRight } from '@lucide/vue'
 import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
@@ -59,6 +62,17 @@ const tagSuggestions = computed(() => {
 const initQty = ref(0)
 const amount = ref(1)
 
+// 选格：对话框先让开，回主页面点一个空格（Esc 取消）
+const picker = usePickerStore()
+
+async function choosePosition() {
+  const pos = await picker.request()
+  if (!pos) return
+  form.zone = pos.zone
+  form.layer = pos.layer
+  form.slot = pos.slot
+}
+
 // ---- 占用格子：同一物料拆到多个格子存放 ----
 const slotBusy = ref(false)
 const liveComp = computed<ComponentItem | null>(
@@ -90,24 +104,12 @@ async function dropSlot(s: SlotRef) {
     await bins.removeSlot(id, s)
   } catch (e) { fail(e) } finally { slotBusy.value = false }
 }
-// 阈值可自动跟随初始库存（默认自动）：入库量改一次、阈值跟着同步一次；
-// 任何时候手动改阈值都会切到「手动」，两边不打架；再点回「自动」立刻同步一次。
-const autoThreshold = ref(true)
-
+// 初次入库的联动：只要入库数量变了，阈值就按 20% 跟着走（可以再手动改）；
+// 已经有库存的元件不走这套，改库存不会动它的阈值。
 watch(initQty, (qty) => {
-  if (!autoThreshold.value) return
+  if (!isCreate.value) return
   form.threshold = suggestThreshold(qty)
 })
-
-function onThresholdEdit(value: number) {
-  form.threshold = value
-  autoThreshold.value = false
-}
-
-function toggleAutoThreshold() {
-  autoThreshold.value = !autoThreshold.value
-  if (autoThreshold.value) form.threshold = suggestThreshold(initQty.value)
-}
 const localQty = ref(0)
 
 // ---- 联网识别：输入料号/描述 → 自动填 名称/值/封装/厂商料号/供应商编号 ----
@@ -207,7 +209,6 @@ watch(
         ...(comp.display_tags ?? []).map((t) => '#' + t),
       ]
       form.threshold = props.comp.threshold
-      autoThreshold.value = false  // 已有元件保留自己的阈值
       form.zone = props.comp.zone
       form.layer = props.comp.layer
       form.slot = props.comp.slot
@@ -227,33 +228,14 @@ watch(
       form.slot = p.slot
       initQty.value = 0
       localQty.value = 0
-      autoThreshold.value = true
     }
   },
   { immediate: true },
 )
 
-// 选项只用数字：列窄也能完整显示（区/层/格 表头已说明含义）
-const zoneOptions = computed<SelectOption[]>(() =>
-  Array.from({ length: props.layout.zone_count }, (_, i) => ({
-    value: i + 1, label: String(i + 1),
-  })))
-// 层选项按「当前选中的区」的层数生成（各区层数可以不同）
-const layerOptions = computed<SelectOption[]>(() =>
-  Array.from({ length: zoneLayers(props.layout, form.zone) }, (_, i) => ({
-    value: i + 1, label: String(i + 1),
-  })))
-const slotOptions = computed<SelectOption[]>(() =>
-  slots.value.map((s) => ({ value: s, label: String(s) })))
-
-// 格选项按“当前选中的区”的尺寸生成
-const slots = computed(() => {
-  const [rows, cols] = zoneGrid(props.layout, form.zone)
-  return Array.from({ length: rows * cols }, (_, i) => i)
-})
-
+// 位置由「选格」在网格上点选，这里只保证落点仍在当前布局范围内
 watch(
-  () => form.zone,
+  () => props.layout,
   () => {
     const [rows, cols] = zoneGrid(props.layout, form.zone)
     if (form.slot >= rows * cols) form.slot = 0
@@ -373,7 +355,7 @@ function close() {
 </script>
 
 <template>
-  <TransitionRoot :show="open" as="template">
+  <TransitionRoot :show="open && !picker.active" as="template">
     <Dialog as="div" class="relative z-50" @close="close">
       <TransitionChild
         as="template" enter="duration-200 ease-out" enter-from="opacity-0"
@@ -512,34 +494,28 @@ function close() {
                              placeholder="输入后回车添加标签" />
                 </div>
 
-                <!-- 位置 + 阈值 -->
-                <div class="grid grid-cols-[2.4fr_1fr] gap-3">
-                  <div class="grid grid-cols-3 gap-2">
-                    <div>
-                      <label class="field-label">区</label>
-                      <NiceSelect v-model="form.zone" :options="zoneOptions" />
-                    </div>
-                    <div>
-                      <label class="field-label">层</label>
-                      <NiceSelect v-model="form.layer" :options="layerOptions" />
-                    </div>
-                    <div>
-                      <label class="field-label">格</label>
-                      <NiceSelect v-model="form.slot" :options="slotOptions" />
+                <!-- 位置：回主页面点一个空格 -->
+                <div class="flex items-end gap-2">
+                  <div class="min-w-0 flex-1">
+                    <label class="field-label">位置</label>
+                    <div class="chip mono w-full justify-center !py-2 !text-[12.5px]">
+                      {{ form.zone }}区/{{ form.layer }}层/{{ form.slot }}格
                     </div>
                   </div>
+                  <button class="btn flex-shrink-0 !py-2 text-xs" @click="choosePosition">
+                    <Crosshair :size="14" /> 选格
+                  </button>
+                </div>
+
+                <!-- 阈值 + 初次入库数量 -->
+                <div class="grid grid-cols-2 gap-3">
                   <div>
-                    <div class="flex items-center gap-1.5">
-                      <label class="field-label">补货阈值</label>
-                      <button class="chip !cursor-pointer !px-2 !py-0.5 !text-[10.5px]"
-                              :class="autoThreshold ? '' : 'opacity-55'"
-                              :style="autoThreshold ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                              @click="toggleAutoThreshold">
-                        {{ autoThreshold ? '自动' : '手动' }}
-                      </button>
-                    </div>
-                    <StepperInput v-model="form.threshold" :min="0" :max="9999"
-                                  @update:model-value="onThresholdEdit" />
+                    <label class="field-label">补货阈值</label>
+                    <StepperInput v-model="form.threshold" :min="0" :max="9999" />
+                  </div>
+                  <div v-if="isCreate">
+                    <label class="field-label">初始库存</label>
+                    <StepperInput v-model="initQty" :min="0" :max="99999" />
                   </div>
                 </div>
 

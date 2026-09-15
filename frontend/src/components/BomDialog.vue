@@ -4,15 +4,15 @@ import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
 import {
-  CheckCircle2, FileUp, ListPlus, PackageX, Play,
+  CheckCircle2, Crosshair, FileUp, ListPlus, PackageX, Play,
   ScanSearch, ScanText, ShoppingCart, X,
 } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { BomParseOut, BomPlan, BomStep } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
+import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
-import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; start: [BomStep[]] }>()
@@ -153,15 +153,27 @@ function openImportList() {
     : null
 }
 
-const slotOptions = computed<SelectOption[]>(() =>
-  Array.from(slotLabels.value.entries()).map(([key, label]) => ({ value: key, label })),
-)
+// 选格：回主页面点一个空格，填给这一行
+const picker = usePickerStore()
 
-const slotLabels = computed(() => {
-  const map = new Map<string, string>()
-  for (const p of freeOptions.value) map.set(keyOf(p), p.zone + '区/' + p.layer + '层/' + p.slot + '格')
-  return map
-})
+function slotLabel(key: string): string {
+  const [z, l, s] = key.split(':')
+  return `${z}区/${l}层/${s}格`
+}
+
+async function pickSlot(row: RowEdit) {
+  const pos = await picker.request()
+  if (!pos) return
+  const key = keyOf(pos)
+  if (rows.value.some((r) => r !== row && r.status !== 'ok' && r.posKey === key)) {
+    row.err = '该格已被本批次占用'
+    row.status = 'err'
+    return
+  }
+  row.posKey = key
+  row.err = ''
+  if (row.status === 'err') row.status = 'pending'
+}
 
 // ---------- 联网识别料号（整表入库用） ----------
 const idBusy = ref(false)
@@ -257,7 +269,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
 </script>
 
 <template>
-  <TransitionRoot :show="open" as="template">
+  <TransitionRoot :show="open && !picker.active" as="template">
     <Dialog as="div" class="relative z-50" @close="emit('close')">
       <TransitionChild as="template" enter="duration-200 ease-out" enter-from="opacity-0"
                        leave="duration-150 ease-in" leave-to="opacity-0">
@@ -430,8 +442,11 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                     <input v-model="row.value" class="input mono !px-2 !py-1 text-[12px]" placeholder="值" :disabled="row.status === 'ok'" />
                     <input v-model="row.package" class="input mono !px-2 !py-1 text-[12px]" placeholder="封装" :disabled="row.status === 'ok'" />
                     <input v-model.number="row.quantity" type="number" min="1" class="input num !px-2 !py-1 text-[12px]" :disabled="row.status === 'ok'" />
-                    <NiceSelect v-model="row.posKey" :options="slotOptions"
-                                :disabled="row.status === 'ok'" placeholder="空格位…" />
+                    <button class="btn w-full !px-2 !py-1 text-[11.5px]"
+                            :disabled="row.status === 'ok'" @click="pickSlot(row)">
+                      <Crosshair :size="12" class="mr-1 inline" />
+                      {{ row.posKey ? slotLabel(row.posKey) : '选格' }}
+                    </button>
                     <span v-if="row.status === 'ok'" class="mono text-[11px] font-bold text-center" style="color: var(--success)">✓</span>
                     <span v-else-if="row.status === 'err'" class="mono text-[11px] font-bold text-center" :title="row.err" style="color: var(--danger)">✗</span>
                     <span v-else class="mono text-[10px] text-center" style="color: var(--text-faint)">…</span>

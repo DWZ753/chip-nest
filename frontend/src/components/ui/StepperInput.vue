@@ -32,7 +32,7 @@ function onInput(ev: Event) {
     <button type="button" class="stepper-btn" :disabled="disabled || modelValue <= min" @click="add(-step)">
       <Minus :size="12" />
     </button>
-    <input type="number" class="num w-full min-w-0 border-0 text-center !rounded-none !border-x-0"
+    <input type="number" class="num min-w-0 flex-1 border-0 px-1 text-center !rounded-none !border-x-0"
            :value="modelValue" :disabled="disabled" :min="min" :max="max" :step="step"
            @input="onInput" />
     <button type="button" class="stepper-btn" :disabled="disabled || modelValue >= max" @click="add(step)">
@@ -54,5 +54,7 @@ function onInput(ev: Event) {
 }
 .stepper-btn:hover:not(:disabled) { color: var(--accent); background: var(--accent-dim); }
 .stepper-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-input[type='number'] { background: transparent; }
+input[type='number'] { background: transparent; text-align: center; }
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>

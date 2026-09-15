@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { CheckCircle2, ListPlus, PackagePlus, Plus, Trash2, X } from '@lucide/vue'
+import { CheckCircle2, Crosshair, ListPlus, PackagePlus, Plus, Trash2, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { BinPosition } from '../stores/bins'
 import { useBinsStore } from '../stores/bins'
+import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
-import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
+
 import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
 
@@ -17,6 +18,28 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const bins = useBinsStore()
+
+// 选格：回主页面点一个空格，填给这一行
+const picker = usePickerStore()
+
+function slotLabel(key: string): string {
+  const [z, l, s] = key.split(':')
+  return `${z}区/${l}层/${s}格`
+}
+
+async function pickSlot(row: Row) {
+  const pos = await picker.request()
+  if (!pos) return
+  const key = keyOf(pos)
+  if (rows.value.some((r) => r !== row && r.status !== 'ok' && r.posKey === key)) {
+    row.err = '该格已被本批占用'
+    row.status = 'err'
+    return
+  }
+  row.posKey = key
+  row.err = ''
+  if (row.status === 'err') row.status = 'pending'
+}
 
 interface Row {
   key: number
@@ -41,13 +64,6 @@ let seq = 0
 
 // 表头与数据行共用同一列宽模板，保证严格对齐
 const GRID_COLS = '1.5fr 86px 72px 1.2fr 96px 96px 1fr 152px 30px'
-
-const slotOptions = computed<SelectOption[]>(() =>
-  freeOptions.value.map((p) => ({
-    value: keyOf(p),
-    label: `${p.zone}区/${p.layer}层/${p.slot}格`,
-  })),
-)
 
 function keyOf(p: BinPosition): string {
   return `${p.zone}:${p.layer}:${p.slot}`
@@ -148,7 +164,7 @@ watch(() => props.open, (v) => { if (v) setupRows() })
 </script>
 
 <template>
-  <TransitionRoot :show="open" as="template">
+  <TransitionRoot :show="open && !picker.active" as="template">
     <Dialog as="div" class="relative z-50" @close="close">
       <TransitionChild as="template" enter="duration-200 ease-out" enter-from="opacity-0"
                        leave="duration-150 ease-in" leave-to="opacity-0">
@@ -200,8 +216,11 @@ watch(() => props.open, (v) => { if (v) setupRows() })
                                       :disabled="row.status === 'ok'" />
                       <TagEditor v-model="row.tags" placeholder="标签" compact
  />
-                      <NiceSelect v-model="row.posKey" :options="slotOptions"
-                                  :disabled="row.status === 'ok'" placeholder="空格位…" />
+                      <button class="btn w-full !px-2 !py-1 text-[11.5px]"
+                              :disabled="row.status === 'ok'" @click="pickSlot(row)">
+                        <Crosshair :size="12" class="mr-1 inline" />
+                        {{ row.posKey ? slotLabel(row.posKey) : '选格' }}
+                      </button>
                       <button class="icon-btn !h-7 !w-7 !rounded-lg" :disabled="row.status === 'ok'"
                               :title="row.err || '删除该行'" @click="rows = rows.filter(x => x.key !== row.key)">
                         <Trash2 :size="13" />

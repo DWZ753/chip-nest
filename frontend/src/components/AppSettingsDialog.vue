@@ -172,7 +172,9 @@ watch(() => props.open, (open) => {
               <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
                 <!-- 外观 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
-                  <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">外观</div>
+                  <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">
+                    <Sun :size="14" style="color: var(--accent-strong)" /> 主题
+                  </div>
                   <div class="flex flex-wrap items-center gap-3">
                     <button
                       class="chip !cursor-pointer !px-3 !py-1.5"
@@ -186,12 +188,28 @@ watch(() => props.open, (open) => {
                       :style="dark ? 'color: var(--accent); border-color: var(--accent)' : ''"
                       @click="setLight(false)"
                     ><Moon :size="12" class="mr-1 inline" />深色</button>
+                  </div>
+                </section>
+
+                <!-- 格子显示：占用格是合并成一张大卡，还是各显示一张共用卡 -->
+                <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">
+                    <Link2 :size="14" style="color: var(--accent-strong)" /> 格子显示
+                  </div>
+                  <div class="flex flex-wrap items-center gap-3">
+                    <span class="text-[12.5px]" style="color: var(--text-dim)">同一物料的相邻占用格</span>
                     <button
                       class="chip !cursor-pointer !px-3 !py-1.5"
                       :class="mergeSlots ? '' : 'opacity-55'"
                       :style="mergeSlots ? 'color: var(--accent); border-color: var(--accent)' : ''"
-                      @click="setMergeSlots(!mergeSlots)"
-                    ><Link2 :size="12" class="mr-1 inline" />跨格显示</button>
+                      @click="setMergeSlots(true)"
+                    >合并一张卡</button>
+                    <button
+                      class="chip !cursor-pointer !px-3 !py-1.5"
+                      :class="mergeSlots ? 'opacity-55' : ''"
+                      :style="mergeSlots ? '' : 'color: var(--accent); border-color: var(--accent)'"
+                      @click="setMergeSlots(false)"
+                    >分开显示</button>
                   </div>
                 </section>
 
