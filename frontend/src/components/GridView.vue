@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X } from '@lucide/vue'
+import {
+  Check, Combine, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X,
+} from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { ComponentItem } from '../api/types'
@@ -90,9 +92,13 @@ function cancelZoneEdit() {
   editingZone.value = 0
 }
 
-function onCard(comp: ComponentItem) {
+function onCard(comp: ComponentItem, isShared = false, pos?: BinPosition) {
   if (picker.active) {
     picker.warn('该格已被占用')
+    return
+  }
+  if (mergeMode.value) {
+    void mergePickCard(comp, isShared, pos)
     return
   }
   if (batchMode.value) {
@@ -239,14 +245,77 @@ function onEmptyClick(pos: BinPosition) {
     picker.confirm(pos)
     return
   }
-  if (moveMode.value) void placeAt(pos)
+  if (mergeMode.value) void mergeClickEmpty(pos)
+  else if (moveMode.value) void placeAt(pos)
   else emit('create', pos)
+}
+
+// ---------- 合并格模式：几个格子共用一个元件 ----------
+const mergeMode = ref(false)
+const mergeSourceId = ref<number | null>(null)
+const mergeSource = computed<ComponentItem | null>(
+  () => bins.components.find((c) => c.id === mergeSourceId.value) ?? null,
+)
+// 移动模式拿着的是"要搬的卡"，合并模式拿着的是"主格"，视觉上都是这张卡被选中
+const heldId = computed(() =>
+  moveMode.value ? pickedId.value : mergeMode.value ? mergeSourceId.value : null)
+
+function enterMerge() {
+  if (batchMode.value) exitBatch()
+  if (moveMode.value) exitMove()
+  mergeMode.value = true
+  mergeSourceId.value = null
+  moveNote.value = null
+}
+
+function exitMerge() {
+  mergeMode.value = false
+  mergeSourceId.value = null
+}
+
+function toggleMerge() {
+  if (mergeMode.value) exitMerge()
+  else enterMerge()
+}
+
+// 点有料格子：选中作主格 / 换主格 / 取消；点共用卡：解除那一格
+async function mergePickCard(comp: ComponentItem, isShared: boolean, pos?: BinPosition) {
+  if (isShared && pos) {
+    try {
+      await bins.removeSlot(comp.id, pos)
+      flashNote(`已解除 ${posText(pos)}`)
+    } catch (e) {
+      flashNote(`解除失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+    return
+  }
+  mergeSourceId.value = mergeSourceId.value === comp.id ? null : comp.id
+  moveNote.value = null
+}
+
+async function mergeClickEmpty(pos: BinPosition) {
+  const src = mergeSource.value
+  if (!src) {
+    flashNote('未选主格')
+    return
+  }
+  try {
+    await bins.addSlot(src.id, pos)
+    flashNote(`已把 ${posText(pos)} 并入「${src.name}」`)
+  } catch (e) {
+    flashNote(`合并失败：${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 function onEsc(ev: KeyboardEvent) {
   if (ev.key !== 'Escape') return
   if (picker.active) {
     picker.cancel()
+    return
+  }
+  if (mergeMode.value) {
+    if (mergeSourceId.value !== null) mergeSourceId.value = null
+    else exitMerge()
     return
   }
   if (pickedId.value !== null) {
@@ -294,7 +363,7 @@ function layerCells(zone: number, layer: number): CellEntry[] {
 
     const primarySlot = info.comp.zone === zone && info.comp.layer === layer ? info.comp.slot : -1
     const hasPrimary = primarySlot >= s && primarySlot <= end
-    if (mergeView.value && end > s && hasPrimary) {
+    if (mergeView.value && !mergeMode.value && end > s && hasPrimary) {
       out.push({
         key: `c${zone}-${layer}-${s}`, pos: { zone, layer, slot: primarySlot },
         kind: 'card', comp: info.comp, span: end - s + 1,
@@ -347,8 +416,12 @@ async function fixOrphans() {
       </template>
       <template v-else>
         <button class="btn !py-1.5 text-xs" :class="moveMode ? 'btn-primary' : ''"
-                title="搬家：点一个格子拿起，再点空格放下" @click="toggleMove">
+                title="搬家／互换" @click="toggleMove">
           <Move :size="13" /> {{ moveMode ? '退出移动' : '移动' }}
+        </button>
+        <button class="btn !py-1.5 text-xs" :class="mergeMode ? 'btn-primary' : ''"
+                title="多个格子共用一个元件" @click="toggleMerge">
+          <Combine :size="13" /> {{ mergeMode ? '退出合并' : '合并格' }}
         </button>
         <button class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
           ☑ 多选
@@ -370,9 +443,30 @@ async function fixOrphans() {
       <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="picker.cancel()">取消</button>
     </div>
 
+    <!-- 合并格：选一个主格，再点空格并进来；点共用卡解除 -->
+    <div
+      v-if="mergeMode"
+      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
+      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
+    >
+      <Combine :size="16" style="color: var(--accent)" />
+      <span class="chip" style="color: var(--accent); border-color: var(--accent)">合并中</span>
+      <template v-if="mergeSource">
+        <span class="text-[13px] font-semibold">
+          主格「{{ mergeSource.name }}」（{{ posText({ zone: mergeSource.zone, layer: mergeSource.layer, slot: mergeSource.slot }) }}）
+        </span>
+        <span class="chip num">共 {{ mergeSource.slot_count }} 格</span>
+      </template>
+      <span v-else class="text-[13px] font-semibold" style="color: var(--text-dim)">未选主格</span>
+      <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">
+        {{ moveNote }}
+      </span>
+      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="exitMerge">退出合并</button>
+    </div>
+
     <!-- 搬家结果 -->
     <div
-      v-if="moveNote"
+      v-else-if="moveNote"
       class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
       style="border-color: color-mix(in srgb, var(--accent) 45%, var(--line))"
     >
@@ -469,16 +563,16 @@ async function fixOrphans() {
                 :selectable="batchMode"
                 :selected="batchMode && selectedIds.has(cell.comp!.id)"
                 :show-supplier="batchMode"
-                :picked="pickedId === cell.comp!.id"
+                :picked="heldId === cell.comp!.id"
                 :swap-ready="!!picked && pickedId !== cell.comp!.id"
-                @click="onCard($event)"
+                @click="onCard($event, cell.kind === 'shared', cell.pos)"
               />
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
                 v-else
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
-                :class="{ 'move-ready': !!picked || picker.active }"
-                :title="picker.active || picked ? '选它' : '空位'"
+                :class="{ 'move-ready': !!heldId || picker.active }"
+                :title="picker.active || heldId ? '选它' : '空位'"
                 @click="onEmptyClick(cell.pos)"
               >
                 <Plus :size="20" />

@@ -3,17 +3,13 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import {
-  Check, Crosshair, Link2, Minus, Pencil, Plus, Sparkles, Trash2, X,
-} from '@lucide/vue'
+import { Check, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
-import type { ComponentItem, LayoutConfig, LookupCandidate, SlotRef } from '../api/types'
+import type { ComponentItem, LayoutConfig, LookupCandidate } from '../api/types'
 import { useBinsStore, zoneGrid, zoneLayers, type BinPosition } from '../stores/bins'
-import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
 import { ArrowLeftRight } from '@lucide/vue'
-import NiceSelect, { type SelectOption } from './ui/NiceSelect.vue'
 import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
 
@@ -62,48 +58,6 @@ const tagSuggestions = computed(() => {
 const initQty = ref(0)
 const amount = ref(1)
 
-// 选格：对话框先让开，回主页面点一个空格（Esc 取消）
-const picker = usePickerStore()
-
-async function choosePosition() {
-  const pos = await picker.request()
-  if (!pos) return
-  form.zone = pos.zone
-  form.layer = pos.layer
-  form.slot = pos.slot
-}
-
-// ---- 占用格子：同一物料拆到多个格子存放 ----
-const slotBusy = ref(false)
-const liveComp = computed<ComponentItem | null>(
-  () => bins.components.find((c) => c.id === props.comp?.id) ?? props.comp,
-)
-const freeSlotOptions = computed<SelectOption[]>(() =>
-  bins.freeSlots().slice(0, 300).map((p) => ({
-    value: `${p.zone}:${p.layer}:${p.slot}`,
-    label: `${p.zone}区/${p.layer}层/${p.slot}格`,
-  })))
-
-async function addSlotFromPicker(key: string | number | null) {
-  const id = liveComp.value?.id
-  if (!id || typeof key !== 'string' || !key) return
-  const [zone, layer, slot] = key.split(':').map(Number)
-  slotBusy.value = true
-  errorMsg.value = null
-  try {
-    await bins.addSlot(id, { zone, layer, slot })
-  } catch (e) { fail(e) } finally { slotBusy.value = false }
-}
-
-async function dropSlot(s: SlotRef) {
-  const id = liveComp.value?.id
-  if (!id) return
-  slotBusy.value = true
-  errorMsg.value = null
-  try {
-    await bins.removeSlot(id, s)
-  } catch (e) { fail(e) } finally { slotBusy.value = false }
-}
 // 初次入库的联动：只要入库数量变了，阈值就按 20% 跟着走（可以再手动改）；
 // 已经有库存的元件不走这套，改库存不会动它的阈值。
 watch(initQty, (qty) => {
@@ -355,7 +309,7 @@ function close() {
 </script>
 
 <template>
-  <TransitionRoot :show="open && !picker.active" as="template">
+  <TransitionRoot :show="open" as="template">
     <Dialog as="div" class="relative z-50" @close="close">
       <TransitionChild
         as="template" enter="duration-200 ease-out" enter-from="opacity-0"
@@ -494,20 +448,7 @@ function close() {
                              placeholder="输入后回车添加标签" />
                 </div>
 
-                <!-- 位置：回主页面点一个空格 -->
-                <div class="flex items-end gap-2">
-                  <div class="min-w-0 flex-1">
-                    <label class="field-label">位置</label>
-                    <div class="chip mono w-full justify-center !py-2 !text-[12.5px]">
-                      {{ form.zone }}区/{{ form.layer }}层/{{ form.slot }}格
-                    </div>
-                  </div>
-                  <button class="btn flex-shrink-0 !py-2 text-xs" @click="choosePosition">
-                    <Crosshair :size="14" /> 选格
-                  </button>
-                </div>
-
-                <!-- 阈值 + 初次入库数量 -->
+                <!-- 阈值 + 初次入库数量（位置由主页面决定：新建时点哪一格就是哪一格，搬家走「移动」） -->
                 <div class="grid grid-cols-2 gap-3">
                   <div>
                     <label class="field-label">补货阈值</label>
@@ -517,34 +458,6 @@ function close() {
                     <label class="field-label">初始库存</label>
                     <StepperInput v-model="initQty" :min="0" :max="99999" />
                   </div>
-                </div>
-
-                <!-- 占用格子：同一物料放在多处 -->
-                <section v-if="!isCreate" class="rounded-2xl p-3"
-                         style="background: var(--panel); border: 1px solid var(--line)">
-                  <div class="flex items-center gap-2 text-[12.5px] font-extrabold">
-                    <Link2 :size="14" style="color: var(--accent-strong)" /> 占用格子
-                  </div>
-                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span v-for="s in (liveComp?.slots ?? [])" :key="`${s.zone}:${s.layer}:${s.slot}`"
-                          class="chip !px-1.5 !text-[10.5px]">
-                      {{ s.zone }}区/{{ s.layer }}层/{{ s.slot }}格
-                      <button class="ml-1 opacity-60 hover:opacity-100" :disabled="slotBusy"
-                              @click="dropSlot(s)">×</button>
-                    </span>
-                    <span v-if="!(liveComp?.slots ?? []).length" class="text-[11.5px]"
-                          style="color: var(--text-faint)">—</span>
-                  </div>
-                  <div class="mt-2">
-                    <NiceSelect :model-value="''" :options="freeSlotOptions" :disabled="slotBusy"
-                                placeholder="添加格子" @update:model-value="addSlotFromPicker" />
-                  </div>
-                </section>
-
-                <!-- 新建：初始库存 -->
-                <div v-if="isCreate" class="w-40">
-                  <label class="field-label">初始库存</label>
-                  <StepperInput v-model="initQty" :min="0" :max="99999" />
                 </div>
 
                 <div v-if="errorMsg" class="rounded-xl px-3 py-2 text-[12.5px] font-semibold"
