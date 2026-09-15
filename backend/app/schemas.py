@@ -192,6 +192,24 @@ class ComponentUpdate(BaseModel):
         return self
 
 
+class SlotOut(BaseModel):
+    """一个附加格（附加格不单独记数量，库存算在元件上）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    zone: int
+    layer: int
+    slot: int
+
+
+class SlotAdd(BaseModel):
+    """给元件追加一个附加格。"""
+
+    zone: int = Field(ge=1)
+    layer: int = Field(ge=1)
+    slot: int = Field(ge=0)
+
+
 class ComponentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -211,6 +229,9 @@ class ComponentOut(BaseModel):
     display_tags: list[str] = []
     display_fields: list[str] = ["value", "package"]
     card_items: list[str] = []
+    # 额外占用的格子；slot_count = 1 + len(slots)
+    slots: list[SlotOut] = []
+    slot_count: int = 1
 
     @field_validator("tags", "display_tags", "display_fields", "card_items",
                      mode="before")
@@ -230,6 +251,25 @@ class StockChange(BaseModel):
     delta: int = Field(..., description="正数入库，负数出库")  # 0 由业务层拒绝
     note: Optional[str] = Field(default=None, max_length=200)
     source: Literal["ui", "guide", "system"] = "ui"
+
+
+class MergeGroupOut(BaseModel):
+    """一组可合并的重复元件（同名同值同封装）。"""
+
+    name: str
+    value: str = ""
+    package: str = ""
+    keep_id: int
+    member_ids: list[int] = []
+    total_quantity: int = Field(ge=0)
+    moved_slots: int = Field(ge=0)   # 变成附加格的格子数
+
+
+class MergeResultOut(BaseModel):
+    dry_run: bool
+    groups: list[MergeGroupOut] = []
+    merged_groups: int = Field(ge=0)
+    merged_components: int = Field(ge=0)
 
 
 class SwapRequest(BaseModel):

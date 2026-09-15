@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { Link2 } from '@lucide/vue'
+
 import type { ComponentItem } from '../api/types'
 
 const props = defineProps<{
@@ -14,6 +16,10 @@ const props = defineProps<{
   picked?: boolean
   /** 移动模式下手上拿着别的格子：本格可作为互换目标 */
   swapReady?: boolean
+  /** 跨格显示的列数（该物料占用的相邻格合成一张卡） */
+  span?: number
+  /** 共用卡：这一格是某个物料的附加占用格 */
+  shared?: boolean
 }>()
 
 const emit = defineEmits<{ click: [ComponentItem] }>()
@@ -164,6 +170,9 @@ const bandWidth = computed(() => {
   return Math.min(100, Math.round((q / t) * 100)) + '%'
 })
 
+// 共用卡上标出"主格"在哪：1区/1层/0格（与流水、引导条同一口径）
+const primaryText = computed(() => `${props.comp.zone}区/${props.comp.layer}层/${props.comp.slot}格`)
+
 const title = computed(() => {
   const base = [props.comp.name, props.comp.value, props.comp.package].filter(Boolean)
   const tags = props.comp.tags ?? []
@@ -178,7 +187,9 @@ const title = computed(() => {
               'card-selected': selected,
               'has-supplier': showSupplier && !!comp.supplier_part,
               'card-picked': picked,
+              'card-shared': shared,
               'swap-ready': swapReady && !picked }"
+    :style="span && span > 1 ? { gridColumn: 'span ' + span } : undefined"
     :title="title"
     role="button"
     tabindex="0"
@@ -190,6 +201,9 @@ const title = computed(() => {
       <span class="card-title card-name min-w-0 flex-1 text-[13px] font-bold leading-snug"
             :title="comp.name">{{ comp.name }}</span>
       <span class="meta-side flex flex-shrink-0 items-center gap-1">
+          <span v-if="comp.slot_count > 1" class="chip chip-led !px-1.5 !text-[9.5px]">
+          {{ comp.slot_count }} 格
+        </span>
         <span v-if="comp.led_index !== null && !selectable"
               class="chip chip-led !px-1.5 !text-[9.5px]" title="灯带序号">LED{{ comp.led_index }}</span>
         <span v-if="!selectable" class="chip qty-chip num !px-1.5 !text-[10px]"
@@ -197,8 +211,15 @@ const title = computed(() => {
       </span>
     </div>
 
+    <!-- 共用卡：这一格是别处的附加占用格，只标出主格位置 -->
+    <div v-if="shared" class="mono mt-0.5 flex items-center gap-1 text-[10px]"
+         style="color: var(--text-faint)">
+      <Link2 :size="10" />
+      <span>{{ primaryText }}</span>
+    </div>
+
     <!-- 统一显示链：字段与标签同一序列，单行自适应，放不下折叠为 +N -->
-    <div v-if="chips.length" ref="chipsRow" class="chips-row mt-0.5 flex flex-wrap items-center overflow-hidden">
+    <div v-if="!shared && chips.length" ref="chipsRow" class="chips-row mt-0.5 flex flex-wrap items-center overflow-hidden">
       <span v-for="(chip, i) in chips" v-show="visFlags[i]" :key="chip.token"
             class="chip !px-1.5 !text-[9.5px] chip-cell" :class="chipClass(chip)"
             :title="chip.kind === 'field' ? FIELD_LABEL[chip.key] + ' ' + chip.text : chip.text">
@@ -216,7 +237,7 @@ const title = computed(() => {
     </div>
 
     <div class="flex-1" />
-    <div class="band-track -mx-3 mt-2">
+    <div v-if="!shared" class="band-track -mx-3 mt-2">
       <div class="band" :class="bandCls" :style="{ width: bandWidth }" />
     </div>
 

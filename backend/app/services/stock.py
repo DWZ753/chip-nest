@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import events
-from app.models import Component, LayoutConfig, Transaction
+from app.models import Component, ComponentSlot, LayoutConfig, Transaction
 from app.services.search import build_search_text
 
 
@@ -144,7 +144,7 @@ async def validate_position(session: AsyncSession, zone: int, layer: int, slot: 
 async def ensure_position_free(
     session: AsyncSession, zone: int, layer: int, slot: int, exclude_id: int | None = None
 ) -> None:
-    """同区同层同格联合唯一检查。"""
+    """同区同层同格联合唯一检查：主格与附加格都算占用。"""
     stmt = select(Component).where(
         Component.zone == zone, Component.layer == layer, Component.slot == slot
     )
@@ -153,6 +153,17 @@ async def ensure_position_free(
     occupant = await session.scalar(stmt)
     if occupant is not None:
         raise PositionBusy(f"{occupant.name}")
+
+    slot_stmt = select(ComponentSlot).where(
+        ComponentSlot.zone == zone, ComponentSlot.layer == layer,
+        ComponentSlot.slot == slot,
+    )
+    if exclude_id is not None:
+        slot_stmt = slot_stmt.where(ComponentSlot.component_id != exclude_id)
+    borrowed = await session.scalar(slot_stmt)
+    if borrowed is not None:
+        owner = await session.get(Component, borrowed.component_id)
+        raise PositionBusy(f"{owner.name if owner else '别的元件'}（占用格）")
 
 
 async def next_led_index(session: AsyncSession) -> int:
@@ -196,6 +207,7 @@ async def create_component(
         led_index = await next_led_index(session)
 
     component = Component(
+        slots=[],  # 显式给空集合：异步会话下不要触发懒加载
         name=name, value=value, package=package,
         quantity=quantity, threshold=threshold,
         zone=zone, layer=layer, slot=slot, led_index=led_index,
@@ -215,6 +227,47 @@ async def create_component(
     ))
     await session.commit()
     events.emit("stock.changed", component)
+    return component
+
+
+async def add_slot(
+    session: AsyncSession, component: Component, zone: int, layer: int, slot: int,
+    source: str = "ui",
+) -> Component:
+    """给元件追加一个附加格（不改变库存，只表示"这个物料的另一处存放位置"）。"""
+    await validate_position(session, zone, layer, slot)
+    if (component.zone, component.layer, component.slot) == (zone, layer, slot):
+        raise PositionBusy("就是它自己的主格")
+    if any((s.zone, s.layer, s.slot) == (zone, layer, slot) for s in component.slots):
+        return component  # 已有：幂等返回
+    await ensure_position_free(session, zone, layer, slot, exclude_id=component.id)
+
+    component.slots.append(ComponentSlot(
+        component_id=component.id, zone=zone, layer=layer, slot=slot,
+    ))
+    session.add(Transaction(
+        kind="adjust", delta=0, source=source,
+        detail=f"{component.name} 增加占用格 {_position(zone, layer, slot)}",
+    ))
+    await session.commit()
+    return component
+
+
+async def remove_slot(
+    session: AsyncSession, component: Component, zone: int, layer: int, slot: int,
+    source: str = "ui",
+) -> Component:
+    """解除一个附加格（主格不能这样删）。"""
+    target = next((s for s in component.slots
+                   if (s.zone, s.layer, s.slot) == (zone, layer, slot)), None)
+    if target is None:
+        raise PositionBusy("这个格子不是它的占用格")
+    component.slots.remove(target)
+    session.add(Transaction(
+        kind="adjust", delta=0, source=source,
+        detail=f"{component.name} 解除占用格 {_position(zone, layer, slot)}",
+    ))
+    await session.commit()
     return component
 
 

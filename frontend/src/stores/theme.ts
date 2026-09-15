@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 
 const KEY = 'chipnest-theme'
 const FONT_KEY = 'chipnest-font-scale'
+const MERGE_KEY = 'chipnest-merge-slots'
 
 function apply(light: boolean) {
   document.documentElement.classList.toggle('light', light)
@@ -25,7 +26,14 @@ function applyFont(v: number) {
 }
 applyFont(fontScale.value)
 
+// 跨格显示：同一物料占用的相邻格是否合成一张跨格大卡（默认开）
+const mergeSlots = ref(localStorage.getItem(MERGE_KEY) !== '0')
+
 export function useTheme() {
+  function setMergeSlots(on: boolean) {
+    mergeSlots.value = on
+    localStorage.setItem(MERGE_KEY, on ? '1' : '0')
+  }
   function setLight(wantLight: boolean) {
     light.value = wantLight
     apply(wantLight)
@@ -39,5 +47,8 @@ export function useTheme() {
     fontScale.value = v
     applyFont(v)
   }
-  return { light, dark, setLight, toggle, fontScale, setFontScale, FONT_STEPS }
+  return {
+    light, dark, setLight, toggle, fontScale, setFontScale, FONT_STEPS,
+    mergeSlots, setMergeSlots,
+  }
 }

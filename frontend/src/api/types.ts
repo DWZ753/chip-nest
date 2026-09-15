@@ -27,6 +27,32 @@ export interface ComponentItem {
   display_tags: string[]
   display_fields: string[]
   card_items: string[]
+  slots: SlotRef[]
+  slot_count: number
+}
+
+// 一个元件的附加占用格（主格是 zone/layer/slot）
+export interface SlotRef {
+  zone: number
+  layer: number
+  slot: number
+}
+
+export interface MergeGroup {
+  name: string
+  value: string
+  package: string
+  keep_id: number
+  member_ids: number[]
+  total_quantity: number
+  moved_slots: number
+}
+
+export interface MergeResult {
+  dry_run: boolean
+  groups: MergeGroup[]
+  merged_groups: number
+  merged_components: number
 }
 
 export interface TransactionRow {

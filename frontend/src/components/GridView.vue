@@ -7,6 +7,7 @@ import type { ComponentItem } from '../api/types'
 import {
   positionKey, useBinsStore, zoneGrid, zoneLayers, zoneName, type BinPosition,
 } from '../stores/bins'
+import { useTheme } from '../stores/theme'
 import BinCard from './BinCard.vue'
 
 const emit = defineEmits<{
@@ -140,6 +141,7 @@ async function deleteSelected() {
 }
 
 const bins = useBinsStore()
+const { mergeSlots: mergeView } = useTheme()
 
 // ---------- 移动模式：点按拿起 → 点空格放下 ----------
 const moveMode = ref(false)
@@ -245,17 +247,60 @@ function onEsc(ev: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onEsc))
 onBeforeUnmount(() => window.removeEventListener('keydown', onEsc))
 
-function zoneCells(zone: number): number {
+interface CellEntry {
+  key: string
+  pos: BinPosition
+  kind: 'card' | 'shared' | 'empty'
+  comp?: ComponentItem
+  span: number
+}
+
+// 一层的渲染列表：主格出卡片；同一物料在同一行里连续的占用格按设置合成为一张跨格卡，
+// 否则每个附加格出一张共用卡；没被占用的出空位。
+function layerCells(zone: number, layer: number): CellEntry[] {
   const [rows, cols] = zoneGrid(bins.layout, zone)
-  return rows * cols
+  const cells = rows * cols
+  const owner = bins.slotOwner
+  const out: CellEntry[] = []
+  let s = 0
+  while (s < cells) {
+    const info = owner[positionKey({ zone, layer, slot: s })]
+    if (!info) {
+      out.push({ key: `e${zone}-${layer}-${s}`, pos: { zone, layer, slot: s }, kind: 'empty', span: 1 })
+      s += 1
+      continue
+    }
+    const row = Math.floor(s / cols)
+    let end = s
+    while (
+      end + 1 < cells
+      && Math.floor((end + 1) / cols) === row
+      && owner[positionKey({ zone, layer, slot: end + 1 })]?.comp.id === info.comp.id
+    ) end += 1
+
+    const primarySlot = info.comp.zone === zone && info.comp.layer === layer ? info.comp.slot : -1
+    const hasPrimary = primarySlot >= s && primarySlot <= end
+    if (mergeView.value && end > s && hasPrimary) {
+      out.push({
+        key: `c${zone}-${layer}-${s}`, pos: { zone, layer, slot: primarySlot },
+        kind: 'card', comp: info.comp, span: end - s + 1,
+      })
+    } else {
+      for (let i = s; i <= end; i++) {
+        const item = owner[positionKey({ zone, layer, slot: i })]!
+        out.push({
+          key: `s${zone}-${layer}-${i}`, pos: { zone, layer, slot: i },
+          kind: item.primary ? 'card' : 'shared', comp: item.comp, span: 1,
+        })
+      }
+    }
+    s = end + 1
+  }
+  return out
 }
 
 function zoneCols(zone: number): number {
   return zoneGrid(bins.layout, zone)[1]
-}
-
-function compAt(pos: BinPosition): ComponentItem | undefined {
-  return bins.compsByKey[positionKey(pos)]
 }
 
 async function fixOrphans() {
@@ -384,21 +429,20 @@ async function fixOrphans() {
             class="grid gap-2.5"
             :style="{ gridTemplateColumns: 'repeat(' + zoneCols(zone) + ', minmax(118px, 1fr))' }"
           >
-            <template
-              v-for="slot in zoneCells(zone)"
-              :key="slot"
-            >
-              <!-- 有料格子 -->
+            <template v-for="cell in layerCells(zone, layer)" :key="cell.key">
+              <!-- 有料格子：可能是跨格大卡，也可能是附加格的共用卡 -->
               <BinCard
-                v-if="compAt({ zone, layer, slot: slot - 1 })"
-                :comp="compAt({ zone, layer, slot: slot - 1 })!"
-                :flashing="!!bins.flashKeys[positionKey({ zone, layer, slot: slot - 1 })]"
-                :guide="bins.guideKey === positionKey({ zone, layer, slot: slot - 1 })"
+                v-if="cell.kind !== 'empty'"
+                :comp="cell.comp!"
+                :span="cell.span"
+                :shared="cell.kind === 'shared'"
+                :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
+                :guide="bins.guideKey === positionKey(cell.pos)"
                 :selectable="batchMode"
-                :selected="batchMode && selectedIds.has(compAt({ zone, layer, slot: slot - 1 })!.id)"
+                :selected="batchMode && selectedIds.has(cell.comp!.id)"
                 :show-supplier="batchMode"
-                :picked="pickedId === compAt({ zone, layer, slot: slot - 1 })!.id"
-                :swap-ready="!!picked && pickedId !== compAt({ zone, layer, slot: slot - 1 })!.id"
+                :picked="pickedId === cell.comp!.id"
+                :swap-ready="!!picked && pickedId !== cell.comp!.id"
                 @click="onCard($event)"
               />
               <!-- 空位：虚线占位卡，点击新建 -->
@@ -407,7 +451,7 @@ async function fixOrphans() {
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
                 :class="{ 'move-ready': !!picked }"
                 :title="picked ? '放这里' : '空位'"
-                @click="onEmptyClick({ zone, layer, slot: slot - 1 })"
+                @click="onEmptyClick(cell.pos)"
               >
                 <Plus :size="20" />
               </button>

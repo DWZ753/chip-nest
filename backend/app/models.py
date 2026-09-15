@@ -4,7 +4,7 @@ import datetime as dt
 from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # 默认货架布局：1 区 x 3 层 x 1 行 4 列（12 格）
 # 首次初始化种入此值；「清空数据」也恢复到此状态
@@ -60,8 +60,37 @@ class Component(Base):
     slot: Mapped[int] = mapped_column(Integer)
     led_index: Mapped[Optional[int]] = mapped_column(Integer)
     search_text: Mapped[str] = mapped_column(String(256), default="", server_default="")
+    # 额外占用的格子（主格仍是上面的 zone/layer/slot）；同一物料拆到多格时就靠它
+    slots: Mapped[list["ComponentSlot"]] = relationship(
+        back_populates="component", cascade="all, delete-orphan", lazy="selectin",
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    @property
+    def slot_count(self) -> int:
+        """占用的格子总数：主格 1 + 附加格。"""
+        return 1 + len(self.slots)
+
+
+class ComponentSlot(Base):
+    """元件额外占用的格子（一个格子最多属于一个元件）。"""
+
+    __tablename__ = "component_slots"
+    __table_args__ = (
+        UniqueConstraint("zone", "layer", "slot", name="uq_slot_position"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    component_id: Mapped[int] = mapped_column(
+        ForeignKey("components.id", ondelete="CASCADE"), index=True
+    )
+    zone: Mapped[int] = mapped_column(Integer)
+    layer: Mapped[int] = mapped_column(Integer)
+    slot: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+    component: Mapped[Component] = relationship(back_populates="slots")
 
 
 class Transaction(Base):

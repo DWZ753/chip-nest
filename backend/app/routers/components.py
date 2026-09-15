@@ -80,6 +80,36 @@ async def create_component(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.post("/{component_id}/slots", response_model=schemas.ComponentOut)
+async def add_component_slot(
+    component_id: int,
+    body: schemas.SlotAdd,
+    session: AsyncSession = Depends(get_session),
+) -> Component:
+    """给元件追加一个占用格（同一物料拆到多个格子存放）。"""
+    component = await _get_component(session, component_id)
+    try:
+        return await stock_service.add_slot(session, component, body.zone, body.layer, body.slot)
+    except (stock_service.PositionBusy, stock_service.OutOfLayout) as exc:
+        raise _map_error(exc)
+
+
+@router.delete("/{component_id}/slots", response_model=schemas.ComponentOut)
+async def remove_component_slot(
+    component_id: int,
+    zone: int = Query(ge=1),
+    layer: int = Query(ge=1),
+    slot: int = Query(ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> Component:
+    """解除一个占用格。"""
+    component = await _get_component(session, component_id)
+    try:
+        return await stock_service.remove_slot(session, component, zone, layer, slot)
+    except stock_service.PositionBusy as exc:
+        raise _map_error(exc)
+
+
 @router.post("/swap", response_model=schemas.SwapOut)
 async def swap_components(
     body: schemas.SwapRequest, session: AsyncSession = Depends(get_session)

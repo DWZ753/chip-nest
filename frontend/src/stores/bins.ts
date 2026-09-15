@@ -44,7 +44,11 @@ export const useBinsStore = defineStore('bins', () => {
   const flashKeys = ref<Record<string, true>>({})
   // 当前布局下所有空位（按 区→层→格 顺序；供购买清单逐项放置用）
   function freeSlots(): BinPosition[] {
+    // 主格与附加格都算已占用
     const occupied = new Set(components.value.map(positionKey))
+    for (const c of components.value) {
+      for (const s of c.slots ?? []) occupied.add(positionKey(s))
+    }
     const out: BinPosition[] = []
     for (let z = 1; z <= layout.value.zone_count; z++) {
       const [rows, cols] = zoneGrid(layout.value, z)
@@ -70,15 +74,27 @@ export const useBinsStore = defineStore('bins', () => {
     return map
   })
 
-  // 布局缩容后的游离元件（超出区/层/格范围，按各区实际尺寸判断）
+  // 位置 -> 占着它的元件（primary=true 是主格，false 是附加格）
+  const slotOwner = computed<Record<string, { comp: ComponentItem; primary: boolean }>>(() => {
+    const map: Record<string, { comp: ComponentItem; primary: boolean }> = {}
+    for (const c of components.value) {
+      map[positionKey(c)] = { comp: c, primary: true }
+      for (const s of c.slots ?? []) map[positionKey(s)] = { comp: c, primary: false }
+    }
+    return map
+  })
+
+  function posInLayout(pos: BinPosition): boolean {
+    if (pos.zone > layout.value.zone_count) return false
+    if (pos.layer > zoneLayers(layout.value, pos.zone)) return false
+    const [rows, cols] = zoneGrid(layout.value, pos.zone)
+    return pos.slot >= 0 && pos.slot < rows * cols
+  }
+
+  // 布局缩容后的游离元件：主格或任一附加格超出网格都算
   const orphanComps = computed<ComponentItem[]>(() => {
     return components.value
-      .filter((c) => {
-        if (c.zone > layout.value.zone_count) return true
-        if (c.layer > zoneLayers(layout.value, c.zone)) return true
-        const [rows, cols] = zoneGrid(layout.value, c.zone)
-        return c.slot >= rows * cols
-      })
+      .filter((c) => !posInLayout(c) || (c.slots ?? []).some((s) => !posInLayout(s)))
       .sort((a, b) => a.zone - b.zone || a.layer - b.layer || a.slot - b.slot)
   })
 
@@ -165,6 +181,19 @@ export const useBinsStore = defineStore('bins', () => {
     return updated
   }
 
+  // 多格存放：加/减一个占用格（库存不变，只是一个物料放在多处）
+  async function addSlot(id: number, pos: BinPosition) {
+    const updated = await api.addComponentSlot(id, pos)
+    upsert(updated)
+    return updated
+  }
+
+  async function removeSlot(id: number, pos: BinPosition) {
+    const updated = await api.removeComponentSlot(id, pos)
+    upsert(updated)
+    return updated
+  }
+
   // 两个格子互换内容：后端一条事务完成，这里把两个元件都刷新到本地
   async function swapComponents(aId: number, bId: number) {
     const result = await api.swapComponents(aId, bId)
@@ -187,8 +216,33 @@ export const useBinsStore = defineStore('bins', () => {
   // 布局缩容后一键把游离元件搬进空格（从 1区/1层/0格 起顺序填）
   async function relocateOrphans(): Promise<number> {
     const occupied = new Set(components.value.map(positionKey))
+    for (const c of components.value) {
+      for (const s of c.slots ?? []) occupied.add(positionKey(s))
+    }
     let moved = 0
+    // 附加格越界：拆掉再挂到新空位（元件本身不动）
+    for (const comp of orphanComps.value) {
+      for (const extra of [...(comp.slots ?? [])]) {
+        if (posInLayout(extra)) continue
+        let target: BinPosition | null = null
+        for (let z = 1; z <= layout.value.zone_count && !target; z++) {
+          const [rows, cols] = zoneGrid(layout.value, z)
+          for (let l = 1; l <= zoneLayers(layout.value, z) && !target; l++) {
+            for (let s = 0; s < rows * cols; s++) {
+              const pos = { zone: z, layer: l, slot: s }
+              if (!occupied.has(positionKey(pos))) { target = pos; break }
+            }
+          }
+        }
+        if (!target) break
+        await removeSlot(comp.id, extra)
+        await addSlot(comp.id, target)
+        occupied.add(positionKey(target))
+        moved++
+      }
+    }
     for (const orphan of orphanComps.value) {
+      if (posInLayout(orphan)) continue
       let target: BinPosition | null = null
       for (let z = 1; z <= layout.value.zone_count && !target; z++) {
         const [rows, cols] = zoneGrid(layout.value, z)
@@ -229,8 +283,8 @@ export const useBinsStore = defineStore('bins', () => {
     compsByKey, orphanComps,
     refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
     updateZoneName,
-    moveComponent, swapComponents, removeComponent, adjustStock, relocateOrphans,
-    setGuidePosition,
+    moveComponent, swapComponents, addSlot, removeSlot, removeComponent, adjustStock,
+    relocateOrphans, setGuidePosition, slotOwner, posInLayout,
     resetAfterWipe,
   }
 })

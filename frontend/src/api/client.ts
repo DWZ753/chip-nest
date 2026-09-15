@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
   AdapterStatus, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  LookupResult, ReindexResult, ResetResult, SwapOut, TransactionRow,
+  LookupResult, MergeResult, ReindexResult, ResetResult, SwapOut, TransactionRow,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -81,6 +81,20 @@ export const api = {
     request<ComponentItem>(`/api/v1/components/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteComponent: (id: number) =>
     request<void>(`/api/v1/components/${id}`, { method: 'DELETE' }),
+  // 多格存放：给元件加/减一个占用格
+  addComponentSlot: (id: number, pos: { zone: number; layer: number; slot: number }) =>
+    request<ComponentItem>(`/api/v1/components/${id}/slots`, {
+      method: 'POST', body: JSON.stringify(pos),
+    }),
+  removeComponentSlot: (id: number, pos: { zone: number; layer: number; slot: number }) =>
+    request<ComponentItem>(`/api/v1/components/${id}/slots` + qs({ ...pos }), { method: 'DELETE' }),
+
+  // 合并「同名同值同封装」的重复元件（dryRun=1 只预览）
+  mergeDuplicates: (dryRun = false) =>
+    request<MergeResult>('/api/v1/system/merge-duplicates' + qs({ dry_run: dryRun ? 'true' : '' }), {
+      method: 'POST',
+    }),
+
   // 两个格子互换内容（位置与灯号对调）
   swapComponents: (aId: number, bId: number) =>
     request<SwapOut>('/api/v1/components/swap', {

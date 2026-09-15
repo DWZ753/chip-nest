@@ -4,18 +4,21 @@ import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
 import {
-  DatabaseZap, Lamp, ListOrdered, MonitorCog, Moon, Palette, Sun, Trash2, X,
+  DatabaseZap, Lamp, Link2, ListOrdered, Layers, MonitorCog, Moon, Palette, Sun,
+  Trash2, X,
 } from '@lucide/vue'
 
 import { api } from '../api/client'
-import type { DataSummary, ResetResult } from '../api/types'
+import type { DataSummary, MergeGroup, ResetResult } from '../api/types'
 import { useConnectionStore } from '../stores/connection'
 import { useTheme } from '../stores/theme'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; reset: []; refresh: [] }>()
 const connection = useConnectionStore()
-const { dark, setLight, fontScale, setFontScale, FONT_STEPS } = useTheme()
+const {
+  dark, setLight, fontScale, setFontScale, FONT_STEPS, mergeSlots, setMergeSlots,
+} = useTheme()
 const SCALE_LABELS = ['小', '中', '大', '特大']
 
 const MODE_TEXT = {
@@ -44,6 +47,37 @@ async function reindexLeds() {
   } finally {
     ledBusy.value = false
   }
+}
+
+// ---- 合并重复元件（同名 + 同标称值 + 同封装）----
+const mergeBusy = ref(false)
+const mergeGroups = ref<MergeGroup[]>([])
+const mergeNote = ref<string | null>(null)
+
+async function previewMerge() {
+  mergeBusy.value = true
+  mergeNote.value = null
+  mergeGroups.value = []
+  try {
+    const res = await api.mergeDuplicates(true)
+    mergeGroups.value = res.groups
+    if (!res.groups.length) mergeNote.value = '没有可合并的重复元件'
+  } catch (e) {
+    mergeNote.value = e instanceof Error ? e.message : String(e)
+  } finally { mergeBusy.value = false }
+}
+
+async function applyMerge() {
+  mergeBusy.value = true
+  try {
+    const res = await api.mergeDuplicates(false)
+    mergeGroups.value = []
+    mergeNote.value = `已合并 ${res.merged_groups} 组、${res.merged_components} 条`
+    await loadSummary()
+    emit('refresh')
+  } catch (e) {
+    mergeNote.value = e instanceof Error ? e.message : String(e)
+  } finally { mergeBusy.value = false }
 }
 
 // ---- 清空所有数据 ----
@@ -152,6 +186,12 @@ watch(() => props.open, (open) => {
                       :style="dark ? 'color: var(--accent); border-color: var(--accent)' : ''"
                       @click="setLight(false)"
                     ><Moon :size="12" class="mr-1 inline" />深色</button>
+                    <button
+                      class="chip !cursor-pointer !px-3 !py-1.5"
+                      :class="mergeSlots ? '' : 'opacity-55'"
+                      :style="mergeSlots ? 'color: var(--accent); border-color: var(--accent)' : ''"
+                      @click="setMergeSlots(!mergeSlots)"
+                    ><Link2 :size="12" class="mr-1 inline" />跨格显示</button>
                   </div>
                 </section>
 
@@ -204,6 +244,35 @@ watch(() => props.open, (open) => {
                   </button>
                   <div v-if="ledNote" class="mt-2 text-[12px] font-semibold" style="color: var(--success)">{{ ledNote }}</div>
                   <div v-if="ledError" class="mt-2 text-[12px] font-semibold" style="color: var(--danger)">{{ ledError }}</div>
+                </section>
+
+                <!-- 重复元件合并 -->
+                <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
+                    <Layers :size="15" style="color: var(--accent-strong)" /> 重复元件
+                  </div>
+                  <button class="btn !py-1.5 text-xs"
+                          :disabled="mergeBusy || !summary || summary.components < 2"
+                          @click="previewMerge">合并重复元件</button>
+
+                  <div v-if="mergeGroups.length" class="mt-2 flex flex-col gap-1">
+                    <div v-for="g in mergeGroups" :key="g.keep_id"
+                         class="flex items-center gap-2 text-[11.5px]">
+                      <span class="truncate font-semibold">{{ g.name }}</span>
+                      <span class="mono" style="color: var(--text-dim)">{{ g.value }} {{ g.package }}</span>
+                      <span class="num ml-auto" style="color: var(--text-faint)">
+                        {{ g.member_ids.length }} 条 · 合计 {{ g.total_quantity }}
+                      </span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-2">
+                      <button class="btn btn-danger !py-1.5 text-xs" :disabled="mergeBusy" @click="applyMerge">
+                        确认合并
+                      </button>
+                      <button class="btn btn-ghost !py-1.5 text-xs" @click="mergeGroups = []">取消</button>
+                    </div>
+                  </div>
+                  <div v-else-if="mergeNote" class="mt-2 text-[12px] font-semibold"
+                       style="color: var(--text-dim)">{{ mergeNote }}</div>
                 </section>
 
                 <!-- 数据：一键清空回到干净初始状态 -->

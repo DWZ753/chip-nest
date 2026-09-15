@@ -3,10 +3,10 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { Check, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
+import { Check, Link2, Minus, Pencil, Plus, Sparkles, Trash2, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
-import type { ComponentItem, LayoutConfig, LookupCandidate } from '../api/types'
+import type { ComponentItem, LayoutConfig, LookupCandidate, SlotRef } from '../api/types'
 import { useBinsStore, zoneGrid, zoneLayers, type BinPosition } from '../stores/bins'
 import { suggestThreshold } from '../utils/stock'
 import { ArrowLeftRight } from '@lucide/vue'
@@ -58,13 +58,56 @@ const tagSuggestions = computed(() => {
 })
 const initQty = ref(0)
 const amount = ref(1)
-// 阈值默认跟着初始库存走；用户手动改过就不再自动覆盖
-const thresholdTouched = ref(false)
+
+// ---- 占用格子：同一物料拆到多个格子存放 ----
+const slotBusy = ref(false)
+const liveComp = computed<ComponentItem | null>(
+  () => bins.components.find((c) => c.id === props.comp?.id) ?? props.comp,
+)
+const freeSlotOptions = computed<SelectOption[]>(() =>
+  bins.freeSlots().slice(0, 300).map((p) => ({
+    value: `${p.zone}:${p.layer}:${p.slot}`,
+    label: `${p.zone}区/${p.layer}层/${p.slot}格`,
+  })))
+
+async function addSlotFromPicker(key: string | number | null) {
+  const id = liveComp.value?.id
+  if (!id || typeof key !== 'string' || !key) return
+  const [zone, layer, slot] = key.split(':').map(Number)
+  slotBusy.value = true
+  errorMsg.value = null
+  try {
+    await bins.addSlot(id, { zone, layer, slot })
+  } catch (e) { fail(e) } finally { slotBusy.value = false }
+}
+
+async function dropSlot(s: SlotRef) {
+  const id = liveComp.value?.id
+  if (!id) return
+  slotBusy.value = true
+  errorMsg.value = null
+  try {
+    await bins.removeSlot(id, s)
+  } catch (e) { fail(e) } finally { slotBusy.value = false }
+}
+// 阈值可自动跟随初始库存（默认自动）：入库量改一次、阈值跟着同步一次；
+// 任何时候手动改阈值都会切到「手动」，两边不打架；再点回「自动」立刻同步一次。
+const autoThreshold = ref(true)
 
 watch(initQty, (qty) => {
-  if (thresholdTouched.value) return
+  if (!autoThreshold.value) return
   form.threshold = suggestThreshold(qty)
 })
+
+function onThresholdEdit(value: number) {
+  form.threshold = value
+  autoThreshold.value = false
+}
+
+function toggleAutoThreshold() {
+  autoThreshold.value = !autoThreshold.value
+  if (autoThreshold.value) form.threshold = suggestThreshold(initQty.value)
+}
 const localQty = ref(0)
 
 // ---- 联网识别：输入料号/描述 → 自动填 名称/值/封装/厂商料号/供应商编号 ----
@@ -164,7 +207,7 @@ watch(
         ...(comp.display_tags ?? []).map((t) => '#' + t),
       ]
       form.threshold = props.comp.threshold
-      thresholdTouched.value = true  // 已有元件不自动改阈值
+      autoThreshold.value = false  // 已有元件保留自己的阈值
       form.zone = props.comp.zone
       form.layer = props.comp.layer
       form.slot = props.comp.slot
@@ -184,7 +227,7 @@ watch(
       form.slot = p.slot
       initQty.value = 0
       localQty.value = 0
-      thresholdTouched.value = false
+      autoThreshold.value = true
     }
   },
   { immediate: true },
@@ -373,7 +416,7 @@ function close() {
                   </div>
                   <div class="mt-2 flex items-center gap-2">
                     <input v-model="lookupText" class="input mono min-w-0 flex-1 !py-1.5" maxlength="80"
-                           placeholder="10k 0603 ／ C14663 ／ STM32H750VBT6"
+                           placeholder="10k 0603 ／ C14663 ／ STM32F103C8T6"
                            @keydown.enter="runLookup" />
                     <button class="btn btn-primary flex-shrink-0 whitespace-nowrap !px-3 !py-1.5 text-xs"
                             :disabled="lookupBusy || !lookupText.trim()" @click="runLookup">
@@ -486,11 +529,41 @@ function close() {
                     </div>
                   </div>
                   <div>
-                    <label class="field-label">补货阈值</label>
+                    <div class="flex items-center gap-1.5">
+                      <label class="field-label">补货阈值</label>
+                      <button class="chip !cursor-pointer !px-2 !py-0.5 !text-[10.5px]"
+                              :class="autoThreshold ? '' : 'opacity-55'"
+                              :style="autoThreshold ? 'color: var(--accent); border-color: var(--accent)' : ''"
+                              @click="toggleAutoThreshold">
+                        {{ autoThreshold ? '自动' : '手动' }}
+                      </button>
+                    </div>
                     <StepperInput v-model="form.threshold" :min="0" :max="9999"
-                                  @update:model-value="thresholdTouched = true" />
+                                  @update:model-value="onThresholdEdit" />
                   </div>
                 </div>
+
+                <!-- 占用格子：同一物料放在多处 -->
+                <section v-if="!isCreate" class="rounded-2xl p-3"
+                         style="background: var(--panel); border: 1px solid var(--line)">
+                  <div class="flex items-center gap-2 text-[12.5px] font-extrabold">
+                    <Link2 :size="14" style="color: var(--accent-strong)" /> 占用格子
+                  </div>
+                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span v-for="s in (liveComp?.slots ?? [])" :key="`${s.zone}:${s.layer}:${s.slot}`"
+                          class="chip !px-1.5 !text-[10.5px]">
+                      {{ s.zone }}区/{{ s.layer }}层/{{ s.slot }}格
+                      <button class="ml-1 opacity-60 hover:opacity-100" :disabled="slotBusy"
+                              @click="dropSlot(s)">×</button>
+                    </span>
+                    <span v-if="!(liveComp?.slots ?? []).length" class="text-[11.5px]"
+                          style="color: var(--text-faint)">—</span>
+                  </div>
+                  <div class="mt-2">
+                    <NiceSelect :model-value="''" :options="freeSlotOptions" :disabled="slotBusy"
+                                placeholder="添加格子" @update:model-value="addSlotFromPicker" />
+                  </div>
+                </section>
 
                 <!-- 新建：初始库存 -->
                 <div v-if="isCreate" class="w-40">

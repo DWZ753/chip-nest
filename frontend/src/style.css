@@ -415,6 +415,14 @@ html.light .chip-tag { color: #5a5ecb; }
   box-shadow: 0 0 0 1.5px var(--accent), var(--glow-primary);
 }
 .bin-card.card-picked::before { opacity: 0.9; }
+/* 共用卡：某物料的附加占用格，淡化处理，一眼区分"主格卡片" */
+.bin-card.card-shared {
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line-strong));
+  box-shadow: none;
+}
+.bin-card.card-shared:hover { border-color: var(--accent); }
 /* 手上拿着别的格子时，其它有料格子可作为互换目标 */
 .bin-card.swap-ready:hover {
   border-style: dashed;

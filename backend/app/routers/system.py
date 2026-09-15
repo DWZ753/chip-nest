@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Optional, Sequence
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import config, schemas
 from app.db import get_session
 from app.hal.manager import get_manager
-from app.models import DEFAULT_LAYOUT, Component, LayoutConfig, Transaction
+from app.models import (
+    DEFAULT_LAYOUT, Component, ComponentSlot, LayoutConfig, Transaction,
+)
+from app.services.stock import _dump_display_tags, _dump_tags
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
 
@@ -70,6 +73,92 @@ async def reindex_leds(session: AsyncSession = Depends(get_session)) -> dict:
     await session.commit()
     logger.info("重排灯带序号：共 {} 个元件，{} 个有变动", len(rows), changed)
     return {"total": len(rows), "changed": changed}
+
+
+def _group_key(comp: Component) -> tuple:
+    """合并分组的键：名称 + 标称值 + 封装（都去空白、忽略大小写）。"""
+    return (
+        (comp.name or "").strip().lower(),
+        (comp.value or "").strip().lower(),
+        (comp.package or "").strip().lower(),
+    )
+
+
+@router.post("/system/merge-duplicates", response_model=schemas.MergeResultOut)
+async def merge_duplicates(
+    dry_run: bool = Query(default=False, description="只预览不落库"),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """把「同名 + 同标称值 + 同封装」的多条元件合并成一条。
+
+    保留 id 最小的那条：数量相加、标签取并集，其余记录的格子变成它的占用格，
+    多余记录删除。dry_run=1 时只返回预览。
+    """
+    rows = list((await session.scalars(
+        select(Component).order_by(Component.id)
+    )).all())
+
+    buckets: dict[tuple, list[Component]] = {}
+    for comp in rows:
+        buckets.setdefault(_group_key(comp), []).append(comp)
+
+    groups: list[dict] = []
+    merged_components = 0
+    for members in buckets.values():
+        if len(members) < 2:
+            continue
+        keep, rest = members[0], members[1:]
+        total = sum(m.quantity for m in members)
+        moved = sum(1 + len(m.slots) for m in rest)
+
+        groups.append({
+            "name": keep.name,
+            "value": keep.value or "",
+            "package": keep.package or "",
+            "keep_id": keep.id,
+            "member_ids": [m.id for m in members],
+            "total_quantity": total,
+            "moved_slots": moved,
+        })
+        if dry_run:
+            continue
+
+        keep.quantity = total
+        tags = list(_as_list(keep.tags))
+        for other in rest:
+            for tag in _as_list(other.tags):
+                if tag not in tags and len(tags) < 8:
+                    tags.append(tag)
+            for extra in list(other.slots):
+                keep.slots.append(ComponentSlot(
+                    component_id=keep.id, zone=extra.zone, layer=extra.layer,
+                    slot=extra.slot,
+                ))
+            keep.slots.append(ComponentSlot(
+                component_id=keep.id, zone=other.zone, layer=other.layer,
+                slot=other.slot,
+            ))
+            await session.delete(other)
+            merged_components += 1
+        keep.tags = _dump_tags(tags)
+        keep.display_tags = _dump_display_tags(tags, _as_list(keep.display_tags))
+        session.add(Transaction(
+            kind="adjust", delta=0, source="ui",
+            detail=(f"合并重复元件：{keep.name} 等 {len(members)} 条 → 一条，"
+                    f"数量合计 {total}，多出的 {moved} 个格子转为占用格"),
+        ))
+        await session.flush()
+
+    if not dry_run and groups:
+        await session.commit()
+
+    logger.info("合并重复元件：{} 组（dry_run={}）", len(groups), dry_run)
+    return {
+        "dry_run": dry_run,
+        "groups": groups,
+        "merged_groups": 0 if dry_run else len(groups),
+        "merged_components": 0 if dry_run else merged_components,
+    }
 
 
 def _as_list(raw: Optional[str]) -> list:
