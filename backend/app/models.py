@@ -93,6 +93,33 @@ class ComponentSlot(Base):
     component: Mapped[Component] = relationship(back_populates="slots")
 
 
+class BlockedSlot(Base):
+    """被标记为不可用的格子（物理容器坏了等）：既不能放元件，也不算空位。"""
+
+    __tablename__ = "blocked_slots"
+    __table_args__ = (
+        UniqueConstraint("zone", "layer", "slot", name="uq_blocked_position"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone: Mapped[int] = mapped_column(Integer)
+    layer: Mapped[int] = mapped_column(Integer)
+    slot: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UndoEntry(Base):
+    """撤销栈：每次改动元件前留一份快照，撤销时按快照还原。"""
+
+    __tablename__ = "undo_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    payload: Mapped[str] = mapped_column(Text)      # JSON
+    done: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
 class Transaction(Base):
     """库存审计流水：入库/出库/引导取料/建档/删除各落一条，与库存同事务提交。"""
 

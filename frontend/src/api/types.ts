@@ -7,7 +7,15 @@ export interface LayoutConfig {
   zone_names: string[]
   zone_sizes: number[][]
   zone_layers: number[]
+  blocked: BlockedSlot[]
   updated_at: string
+}
+
+// 被标记为不可用的格子（物理容器坏了等）
+export interface BlockedSlot {
+  zone: number
+  layer: number
+  slot: number
 }
 
 export interface ComponentItem {
@@ -117,6 +125,19 @@ export interface AdapterStatus {
 export interface SwapOut {
   a: ComponentItem
   b: ComponentItem
+}
+
+// 撤销
+export interface UndoOut {
+  ok: boolean
+  label: string
+  message: string
+  component_ids: number[]
+}
+
+export interface UndoPeek {
+  label: string
+  ts: string | null
 }
 
 // 灯带序号重排结果

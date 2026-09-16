@@ -40,6 +40,7 @@ async def _set_layout(client, **overrides) -> dict:
 async def test_reset_rejects_wrong_confirm_word(client):
     """确认词不对 -> 400 且数据原样保留。"""
     await _create(client, slot=0)
+    backups_before = len(list(config.backup_dir().glob("*.json")))
 
     resp = await client.post("/api/v1/system/reset", json={"confirm": "清"})
     assert resp.status_code == 400
@@ -47,7 +48,8 @@ async def test_reset_rejects_wrong_confirm_word(client):
 
     rows = (await client.get("/api/v1/components")).json()
     assert len(rows) == 1
-    assert list(config.backup_dir().glob("*.json")) == []
+    # 确认词不对时不写备份（备份目录里可能已有别的用例留下的文件，只比前后数量）
+    assert len(list(config.backup_dir().glob("*.json"))) == backups_before
 
 
 async def test_reset_wipes_components_and_transactions(client):

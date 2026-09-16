@@ -11,7 +11,10 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import events
-from app.models import Component, ComponentSlot, LayoutConfig, Transaction
+from app.models import (
+    BlockedSlot, Component, ComponentSlot, LayoutConfig, Transaction,
+)
+from app.services import undo as undo_service
 from app.services.search import build_search_text
 
 
@@ -84,6 +87,14 @@ class PositionBusy(Exception):
     def __init__(self, occupant: str):
         self.occupant = occupant
         super().__init__(f"槽位已被占用：{occupant}")
+
+
+class SlotBlocked(Exception):
+    """目标格子被标记为不可用（物理容器坏了等）。"""
+
+    def __init__(self, zone: int, layer: int, slot: int):
+        self.position = (zone, layer, slot)
+        super().__init__(f"该格已标记不可用：{zone}区/{layer}层/{slot}格")
 
 
 class OutOfLayout(Exception):
@@ -165,6 +176,71 @@ async def ensure_position_free(
         owner = await session.get(Component, borrowed.component_id)
         raise PositionBusy(f"{owner.name if owner else '别的元件'}（占用格）")
 
+    blocked = await session.scalar(select(BlockedSlot).where(
+        BlockedSlot.zone == zone, BlockedSlot.layer == layer, BlockedSlot.slot == slot
+    ))
+    if blocked is not None:
+        raise SlotBlocked(zone, layer, slot)
+
+
+async def blocked_positions(session: AsyncSession) -> set[tuple[int, int, int]]:
+    """当前被标记为不可用的格子。"""
+    rows = (await session.scalars(select(BlockedSlot))).all()
+    return {(r.zone, r.layer, r.slot) for r in rows}
+
+
+async def first_free_position(session: AsyncSession) -> tuple[int, int, int] | None:
+    """按 区→层→格 顺序找第一个能放东西的格子。"""
+    layout = await load_layout(session)
+    occupied = {
+        (c.zone, c.layer, c.slot)
+        for c in (await session.scalars(select(Component))).all()
+    }
+    occupied |= {
+        (s.zone, s.layer, s.slot)
+        for s in (await session.scalars(select(ComponentSlot))).all()
+    }
+    blocked = await blocked_positions(session)
+    for zone in range(1, layout.zone_count + 1):
+        rows, cols = zone_grid(layout, zone)
+        for layer in range(1, zone_layers(layout, zone) + 1):
+            for slot in range(rows * cols):
+                pos = (zone, layer, slot)
+                if pos not in occupied and pos not in blocked:
+                    return pos
+    return None
+
+
+async def block_slot(
+    session: AsyncSession, zone: int, layer: int, slot: int, source: str = "ui"
+) -> None:
+    """把某个格子标记为不可用（不能放元件、也不算空位）。"""
+    await validate_position(session, zone, layer, slot)
+    await ensure_position_free(session, zone, layer, slot)
+    session.add(BlockedSlot(zone=zone, layer=layer, slot=slot))
+    session.add(Transaction(
+        kind="adjust", delta=0, source=source,
+        detail=f"标记 {_position(zone, layer, slot)} 不可用",
+    ))
+    await session.commit()
+
+
+async def unblock_slot(
+    session: AsyncSession, zone: int, layer: int, slot: int, source: str = "ui"
+) -> None:
+    """恢复某个格子可用。"""
+    row = await session.scalar(select(BlockedSlot).where(
+        BlockedSlot.zone == zone, BlockedSlot.layer == layer, BlockedSlot.slot == slot
+    ))
+    if row is None:
+        raise PositionBusy("这个格子没有被标记不可用")
+    await session.delete(row)
+    session.add(Transaction(
+        kind="adjust", delta=0, source=source,
+        detail=f"恢复 {_position(zone, layer, slot)} 可用",
+    ))
+    await session.commit()
+
 
 async def next_led_index(session: AsyncSession) -> int:
     """自动分配灯带序号：现有最大 + 1（0 起）。
@@ -225,6 +301,8 @@ async def create_component(
         kind="create", delta=quantity, source=source,
         detail=f"建档 {name}（{_position(zone, layer, slot)}），初始库存 {quantity}",
     ))
+    await session.flush()
+    await undo_service.record(session, f"建档 {name}", {"op": "create", "id": component.id})
     await session.commit()
     events.emit("stock.changed", component)
     return component
@@ -241,6 +319,7 @@ async def add_slot(
     if any((s.zone, s.layer, s.slot) == (zone, layer, slot) for s in component.slots):
         return component  # 已有：幂等返回
     await ensure_position_free(session, zone, layer, slot, exclude_id=component.id)
+    before = undo_service.snapshot(component)
 
     component.slots.append(ComponentSlot(
         component_id=component.id, zone=zone, layer=layer, slot=slot,
@@ -249,6 +328,11 @@ async def add_slot(
         kind="adjust", delta=0, source=source,
         detail=f"{component.name} 增加占用格 {_position(zone, layer, slot)}",
     ))
+    await session.flush()
+    await undo_service.record(
+        session, f"合并格 {_position(zone, layer, slot)} → {component.name}",
+        {"op": "snapshot", "id": component.id, "before": before},
+    )
     await session.commit()
     return component
 
@@ -262,11 +346,17 @@ async def remove_slot(
                    if (s.zone, s.layer, s.slot) == (zone, layer, slot)), None)
     if target is None:
         raise PositionBusy("这个格子不是它的占用格")
+    before = undo_service.snapshot(component)
     component.slots.remove(target)
     session.add(Transaction(
         kind="adjust", delta=0, source=source,
         detail=f"{component.name} 解除占用格 {_position(zone, layer, slot)}",
     ))
+    await session.flush()
+    await undo_service.record(
+        session, f"解除共用格 {_position(zone, layer, slot)}",
+        {"op": "snapshot", "id": component.id, "before": before},
+    )
     await session.commit()
     return component
 
@@ -286,6 +376,10 @@ async def swap_positions(
     a_pos = (a.zone, a.layer, a.slot)
     b_pos = (b.zone, b.layer, b.slot)
     a_led, b_led = a.led_index, b.led_index
+    before = [
+        {"id": a.id, "before": undo_service.snapshot(a)},
+        {"id": b.id, "before": undo_service.snapshot(b)},
+    ]
 
     await validate_position(session, *a_pos)
     await validate_position(session, *b_pos)
@@ -306,6 +400,10 @@ async def swap_positions(
         detail=(f"互换 {a.name}（{_position(*a_pos)}）与 "
                 f"{b.name}（{_position(*b_pos)}）"),
     ))
+    await undo_service.record(
+        session, f"互换 {a.name} 与 {b.name}",
+        {"op": "snapshot_many", "items": before},
+    )
     await session.commit()
 
     # 位置变了，灯带按新库存重新点亮各自槽位
@@ -319,6 +417,7 @@ async def update_component(
 ) -> Component:
     """属性/搬家修改（不允许直接改库存），同事务提交。"""
     changed = []
+    before = undo_service.snapshot(component) if patch else None
 
     if "zone" in patch:  # 搬家：三字段必成组（路由已校验）
         zone, layer, slot = patch["zone"], patch["layer"], patch["slot"]
@@ -370,6 +469,11 @@ async def update_component(
             kind="adjust", component_id=component.id, delta=0, source=source,
             detail=f"修改 {component.name}：{', '.join(changed)}",
         ))
+        await session.flush()
+        await undo_service.record(
+            session, f"修改 {component.name}：{', '.join(changed)}",
+            {"op": "snapshot", "id": component.id, "before": before},
+        )
     await session.commit()
     return component
 
@@ -380,9 +484,14 @@ async def delete_component(
     """删除元件并留审计快照，同事务提交。"""
     snapshot = (f"删除元件 {component.name}（{_position(component.zone, component.layer, component.slot)}，"
                 f"库存 {component.quantity}，灯 {component.led_index}）")
+    payload = undo_service.snapshot(component)
     session.add(Transaction(
         kind="delete", delta=0, source=source, detail=snapshot,
     ))
+    await undo_service.record(
+        session, f"删除 {component.name}",
+        {"op": "delete", "id": component.id, "before": payload},
+    )
     await session.delete(component)
     await session.commit()
     events.emit("component.removed", component)
@@ -398,6 +507,7 @@ async def change_stock(
     """入/出库：负数为出库，出库带行级原子保护，防并发扣成负数。"""
     if delta == 0:
         raise ValueError("delta 不能为 0")
+    before = undo_service.snapshot(component)
 
     if delta > 0:
         component.quantity += delta
@@ -429,6 +539,11 @@ async def change_stock(
         kind=kind, component_id=component.id, delta=delta, source=source,
         detail=f"{verb} {abs(delta)} 个（{note or '无备注'}）",
     ))
+    await session.flush()
+    await undo_service.record(
+        session, f"{verb} {abs(delta)} 个 · {component.name}",
+        {"op": "snapshot", "id": component.id, "before": before},
+    )
     await session.commit()
     events.emit("stock.changed", component)
     return component

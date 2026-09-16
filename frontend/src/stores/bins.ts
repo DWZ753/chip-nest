@@ -7,7 +7,7 @@ import type { ComponentItem, LayoutConfig } from '../api/types'
 
 const DEFAULT_LAYOUT: LayoutConfig = {
   zone_count: 1, layer_count: 3, row_count: 1, col_count: 4,
-  zone_names: [], zone_sizes: [], zone_layers: [], updated_at: '',
+  zone_names: [], zone_sizes: [], zone_layers: [], blocked: [], updated_at: '',
 }
 
 export interface BinPosition { zone: number; layer: number; slot: number }
@@ -40,15 +40,23 @@ export const useBinsStore = defineStore('bins', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const query = ref('')
+  // 检索命中的元件 id（null=没有检索）：命中的高亮，没命中的在网格里变暗但**不消失**
+  const matchedIds = ref<Set<number> | null>(null)
   // 检索命中闪烁集合（key -> 无需时间戳，1.6s 后清除使动画结束）
   const flashKeys = ref<Record<string, true>>({})
   // 当前布局下所有空位（按 区→层→格 顺序；供购买清单逐项放置用）
+  // 被标记为不可用的格子（物理容器坏了等）
+  const blockedKeys = computed<Set<string>>(
+    () => new Set((layout.value.blocked ?? []).map((b) => positionKey(b))),
+  )
+
   function freeSlots(): BinPosition[] {
-    // 主格与附加格都算已占用
+    // 主格、附加格、不可用格都不算空位
     const occupied = new Set(components.value.map(positionKey))
     for (const c of components.value) {
       for (const s of c.slots ?? []) occupied.add(positionKey(s))
     }
+    for (const key of blockedKeys.value) occupied.add(key)
     const out: BinPosition[] = []
     for (let z = 1; z <= layout.value.zone_count; z++) {
       const [rows, cols] = zoneGrid(layout.value, z)
@@ -120,10 +128,9 @@ export const useBinsStore = defineStore('bins', () => {
     loading.value = true
     error.value = null
     try {
-      const rows = await api.listComponents({ q: query.value })
-      components.value = rows
-      // 命中检索的行整体呼吸上浮一次（同一查询只闪一次）
-      if (query.value.trim()) addFlash(rows.map(positionKey), query.value.trim())
+      // 永远拉全量：检索只用来标记命中，格子上的东西不能因为检索而消失
+      components.value = await api.listComponents()
+      await applyQuery()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -153,12 +160,31 @@ export const useBinsStore = defineStore('bins', () => {
     await Promise.all([refreshLayout(), refreshComponents()])
   }
 
+  // 只重算"哪些命中"，不动元件列表；命中卡片呼吸高亮一次
+  async function applyQuery() {
+    const q = query.value.trim()
+    if (!q) {
+      matchedIds.value = null
+      return
+    }
+    try {
+      const hits = await api.listComponents({ q })
+      matchedIds.value = new Set(hits.map((c) => c.id))
+      addFlash(hits.map(positionKey), q)
+    } catch {
+      matchedIds.value = null
+    }
+  }
+
   function setQuery(q: string) {
     query.value = q
-    if (!q.trim()) lastFlashQuery = ''
+    if (!q.trim()) {
+      lastFlashQuery = ''
+      matchedIds.value = null
+    }
     window.clearTimeout(queryTimer)
     queryTimer = window.setTimeout(() => {
-      void refreshComponents().catch(() => undefined)
+      void applyQuery()
     }, 320)
   }
 
@@ -179,6 +205,24 @@ export const useBinsStore = defineStore('bins', () => {
     })
     upsert(updated)
     return updated
+  }
+
+  // 不可用格：标记 / 恢复（物理容器坏了就标上，任何地方都不会再往里放东西）
+  async function blockAt(pos: BinPosition) {
+    await api.blockSlot(pos)
+    await refreshLayout()
+  }
+
+  async function unblockAt(pos: BinPosition) {
+    await api.unblockSlot(pos)
+    await refreshLayout()
+  }
+
+  // 撤销上一步：后端按快照还原，这边整体刷新
+  async function undoLast() {
+    const result = await api.undoLast()
+    if (result.ok) await refreshAll()
+    return result
   }
 
   // 多格存放：加/减一个占用格（库存不变，只是一个物料放在多处）
@@ -267,6 +311,7 @@ export const useBinsStore = defineStore('bins', () => {
   async function resetAfterWipe() {
     query.value = ''
     lastFlashQuery = ''
+    matchedIds.value = null
     window.clearTimeout(queryTimer)
     flashKeys.value = {}
     guideKey.value = null
@@ -279,12 +324,13 @@ export const useBinsStore = defineStore('bins', () => {
   }
 
   return {
-    layout, components, loading, error, query, flashKeys, guideKey,
+    layout, components, loading, error, query, matchedIds, flashKeys, guideKey,
     compsByKey, orphanComps,
     refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
     updateZoneName,
-    moveComponent, swapComponents, addSlot, removeSlot, removeComponent, adjustStock,
-    relocateOrphans, setGuidePosition, slotOwner, posInLayout,
+    moveComponent, swapComponents, addSlot, removeSlot, blockAt, unblockAt, undoLast,
+    removeComponent, adjustStock, relocateOrphans, setGuidePosition, slotOwner,
+    posInLayout, blockedKeys,
     resetAfterWipe,
   }
 })

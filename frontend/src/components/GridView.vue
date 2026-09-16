@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
-  Check, Combine, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X,
+  Ban, Check, Combine, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X,
 } from '@lucide/vue'
 
 import { api } from '../api/client'
@@ -268,6 +268,7 @@ function onEmptyClick(pos: BinPosition) {
   }
   if (mergeMode.value) void mergeClickEmpty(pos)
   else if (moveMode.value) void placeAt(pos)
+  else if (blockMode.value) void toggleBlockAt(pos)
   else emit('create', pos)
 }
 
@@ -360,6 +361,10 @@ function onEsc(ev: KeyboardEvent) {
     else exitMerge()
     return
   }
+  if (blockMode.value) {
+    blockMode.value = false
+    return
+  }
   if (pickedSlot.value) {
     const pos = pickedSlot.value.pos
     pickedSlot.value = null
@@ -378,10 +383,36 @@ function onEsc(ev: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onEsc))
 onBeforeUnmount(() => window.removeEventListener('keydown', onEsc))
 
+// ---------- 停用格模式：把坏掉的格子标记为不可用 ----------
+const blockMode = ref(false)
+
+function toggleBlockMode() {
+  if (batchMode.value) exitBatch()
+  if (moveMode.value) exitMove()
+  if (mergeMode.value) exitMerge()
+  blockMode.value = !blockMode.value
+  moveNote.value = null
+}
+
+async function toggleBlockAt(pos: BinPosition) {
+  const blocked = bins.blockedKeys.has(positionKey(pos))
+  try {
+    if (blocked) {
+      await bins.unblockAt(pos)
+      flashNote(`已恢复 ${posText(pos)} 可用`)
+    } else {
+      await bins.blockAt(pos)
+      flashNote(`已标记 ${posText(pos)} 不可用`)
+    }
+  } catch (e) {
+    flashNote(`操作失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 interface CellEntry {
   key: string
   pos: BinPosition
-  kind: 'card' | 'shared' | 'empty'
+  kind: 'card' | 'shared' | 'empty' | 'blocked'
   comp?: ComponentItem
   col: number
   row: number
@@ -451,9 +482,11 @@ function layerCells(zone: number, layer: number): CellEntry[] {
     const col = s % cols
     const info = ownerAt(s)
     if (!info) {
+      const pos = { zone, layer, slot: s }
       out.push({
-        key: `e${zone}-${layer}-${s}`, pos: { zone, layer, slot: s },
-        kind: 'empty', row, col, colSpan: 1, rowSpan: 1,
+        key: `e${zone}-${layer}-${s}`, pos,
+        kind: bins.blockedKeys.has(positionKey(pos)) ? 'blocked' : 'empty',
+        row, col, colSpan: 1, rowSpan: 1,
       })
       continue
     }
@@ -507,6 +540,10 @@ async function fixOrphans() {
                 title="多个格子共用一个元件" @click="toggleMerge">
           <Combine :size="13" /> {{ mergeMode ? '退出合并' : '合并格' }}
         </button>
+        <button class="btn !py-1.5 text-xs" :class="blockMode ? 'btn-primary' : ''"
+                title="把坏掉的格子标记为不可用" @click="toggleBlockMode">
+          <Ban :size="13" /> {{ blockMode ? '退出停用' : '停用格' }}
+        </button>
         <button class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
           ☑ 多选
         </button>
@@ -525,6 +562,19 @@ async function fixOrphans() {
         {{ picker.error }}
       </span>
       <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="picker.cancel()">取消</button>
+    </div>
+
+    <!-- 停用格：点空格标记 / 点不可用格恢复 -->
+    <div
+      v-if="blockMode"
+      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
+      style="border-color: color-mix(in srgb, var(--warn) 55%, var(--line))"
+    >
+      <Ban :size="16" style="color: var(--warn)" />
+      <span class="chip" style="color: var(--warn); border-color: var(--warn)">停用格</span>
+      <span class="chip num">已停用 {{ bins.blockedKeys.size }} 格</span>
+      <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">{{ moveNote }}</span>
+      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="blockMode = false">退出停用</button>
     </div>
 
     <!-- 移动中：拿着什么，一眼可见 -->
@@ -656,12 +706,13 @@ async function fixOrphans() {
             <template v-for="cell in layerCells(zone, layer)" :key="cell.key">
               <!-- 有料格子：可能是跨格大卡，也可能是附加格的共用卡 -->
               <BinCard
-                v-if="cell.kind !== 'empty'"
+                v-if="cell.kind === 'card' || cell.kind === 'shared'"
                 :comp="cell.comp!"
                 :grid-style="cellStyle(cell)"
                 :col-span="cell.colSpan"
                 :row-span="cell.rowSpan"
                 :shared="cell.kind === 'shared'"
+                :dimmed="!!bins.matchedIds && !bins.matchedIds.has(cell.comp!.id)"
                 :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
                 :guide="bins.guideKey === positionKey(cell.pos)"
                 :selectable="batchMode"
@@ -671,6 +722,17 @@ async function fixOrphans() {
                 :swap-ready="!pickedSlot && !!picked && pickedId !== cell.comp!.id"
                 @click="onCard($event, cell.kind === 'shared', cell.pos)"
               />
+              <!-- 不可用格：坏掉的格子，任何模式都不会往里放东西 -->
+              <div
+                v-else-if="cell.kind === 'blocked'"
+                class="card-blocked grid min-h-[96px] cursor-pointer place-items-center rounded-[14px]"
+                :style="cellStyle(cell)"
+                :class="{ 'blocked-active': blockMode }"
+                :title="blockMode ? '恢复可用' : '不可用'"
+                @click="blockMode && toggleBlockAt(cell.pos)"
+              >
+                <Ban :size="18" />
+              </div>
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
                 v-else

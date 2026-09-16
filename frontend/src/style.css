@@ -423,6 +423,25 @@ html.light .chip-tag { color: #5a5ecb; }
   box-shadow: none;
 }
 .bin-card.card-shared:hover { border-color: var(--accent); }
+/* 检索时没命中的卡片：变暗但留在原位（格子里原来有东西，不能凭空消失） */
+.bin-card.card-dimmed { opacity: 0.28; filter: saturate(0.45); }
+.bin-card.card-dimmed:hover { opacity: 0.8; filter: none; }
+/* 不可用格：斜纹底 + 禁用图标，既不占位也不给点新建 */
+.card-blocked {
+  border: 1px dashed color-mix(in srgb, var(--warn) 45%, var(--line-strong));
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--warn) 8%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  color: color-mix(in srgb, var(--warn) 75%, var(--text-faint));
+  transition: border-color 0.2s, background 0.2s;
+}
+.card-blocked.blocked-active:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
 /* 手上拿着别的格子时，其它有料格子可作为互换目标 */
 .bin-card.swap-ready:hover {
   border-style: dashed;

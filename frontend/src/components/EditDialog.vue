@@ -88,6 +88,26 @@ function resetLookup(seed = '') {
   pickedIndex.value = -1
 }
 
+const detailBusy = ref(false)
+
+/** 候选列表里只有第一条带参数/数据手册，点别的时按编号补拉一次。 */
+async function loadCandidateDetail(c: LookupCandidate, index: number) {
+  if (!c.lcsc || c.datasheet || Object.keys(c.params ?? {}).length) return
+  detailBusy.value = true
+  try {
+    const full = await api.lookupDetail(c.lcsc)
+    candidates.value[index] = { ...c, ...full }
+    if (pickedIndex.value === index) {
+      datasheet.value = full.datasheet || ''
+      appliedParams.value = full.params ?? {}
+    }
+  } catch {
+    /* 拉不到就保持原样，不影响选择 */
+  } finally {
+    detailBusy.value = false
+  }
+}
+
 function applyCandidate(c: LookupCandidate, index = -1) {
   // 换一条候选就把五个字段整体刷新一遍（该条没有的字段清空），
   // 否则会出现"点了另一条但界面没变"的错觉
@@ -102,6 +122,7 @@ function applyCandidate(c: LookupCandidate, index = -1) {
   const tag = [c.lcsc, c.mpn].filter(Boolean).join(' ')
   lookupNote.value = tag ? `已填入 ${tag}` : '已填入'
   lookupError.value = null
+  if (index >= 0) void loadCandidateDetail(c, index)
 }
 
 async function runLookup() {
@@ -367,6 +388,9 @@ function close() {
                   <div v-if="lookupError" class="mt-1.5 text-[11.5px] font-semibold"
                        style="color: var(--danger)">{{ lookupError }}</div>
 
+                  <div v-if="detailBusy" class="mt-1.5 text-[11.5px]" style="color: var(--text-faint)">
+                    查询中…
+                  </div>
                   <div v-if="Object.keys(appliedParams).length"
                        class="mt-2 flex flex-wrap gap-1">
                     <span v-for="(v, k) in appliedParams" :key="k" class="chip !px-1.5 !text-[10px]"

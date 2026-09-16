@@ -21,6 +21,8 @@ const props = defineProps<{
   /** 占用几列／几行：跨格卡地方大，显示链可以多铺几行 */
   colSpan?: number
   rowSpan?: number
+  /** 检索时没命中的卡片：变暗但仍留在格子里 */
+  dimmed?: boolean
   /** 共用卡：这一格是某个物料的附加占用格 */
   shared?: boolean
 }>()
@@ -207,6 +209,7 @@ const title = computed(() => {
               'has-supplier': showSupplier && !!comp.supplier_part,
               'card-picked': picked,
               'card-shared': shared,
+              'card-dimmed': dimmed,
               'swap-ready': swapReady && !picked }"
     :style="gridStyle"
     :title="title"

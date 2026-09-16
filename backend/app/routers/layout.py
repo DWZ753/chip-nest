@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.db import get_session
-from app.models import LayoutConfig
+from app.models import BlockedSlot, LayoutConfig
+from app.services import stock as stock_service
 
 router = APIRouter(prefix="/api/v1/layout", tags=["layout"])
 
@@ -89,6 +90,38 @@ def _dump_zone_names(names: list[str], count: int) -> str:
     return json.dumps(cleaned[:count], ensure_ascii=False)
 
 
+async def _blocked(session: AsyncSession) -> list[BlockedSlot]:
+    rows = await session.scalars(
+        select(BlockedSlot).order_by(BlockedSlot.zone, BlockedSlot.layer, BlockedSlot.slot)
+    )
+    return list(rows.all())
+
+
+@router.post("/blocked", response_model=list[schemas.BlockedSlotOut])
+async def block_slot(
+    body: schemas.BlockedSlotIn, session: AsyncSession = Depends(get_session)
+) -> list[BlockedSlot]:
+    """把某个格子标记为不可用（不能放元件，也不算空位）。"""
+    try:
+        await stock_service.block_slot(session, body.zone, body.layer, body.slot)
+    except (stock_service.PositionBusy, stock_service.SlotBlocked,
+            stock_service.OutOfLayout) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return await _blocked(session)
+
+
+@router.delete("/blocked", response_model=list[schemas.BlockedSlotOut])
+async def unblock_slot(
+    zone: int, layer: int, slot: int, session: AsyncSession = Depends(get_session)
+) -> list[BlockedSlot]:
+    """恢复某个格子可用。"""
+    try:
+        await stock_service.unblock_slot(session, zone, layer, slot)
+    except stock_service.PositionBusy as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return await _blocked(session)
+
+
 @router.get("", response_model=schemas.LayoutOut)
 async def read_layout(session: AsyncSession = Depends(get_session)) -> dict:
     row = await get_layout_row(session)
@@ -101,6 +134,7 @@ async def read_layout(session: AsyncSession = Depends(get_session)) -> dict:
         "zone_names": _zone_names(row),
         "zone_sizes": _zone_sizes(row),
         "zone_layers": _zone_layers(row),
+        "blocked": await _blocked(session),
     }
 
 
@@ -128,4 +162,5 @@ async def update_layout(
         "zone_names": _zone_names(row),
         "zone_sizes": _zone_sizes(row),
         "zone_layers": _zone_layers(row),
+        "blocked": await _blocked(session),
     }

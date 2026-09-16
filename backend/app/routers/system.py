@@ -22,8 +22,10 @@ from app import config, schemas
 from app.db import get_session
 from app.hal.manager import get_manager
 from app.models import (
-    DEFAULT_LAYOUT, Component, ComponentSlot, LayoutConfig, Transaction,
+    DEFAULT_LAYOUT, BlockedSlot, Component, ComponentSlot, LayoutConfig,
+    Transaction, UndoEntry,
 )
+from app.services import undo as undo_service
 from app.services.stock import _dump_display_tags, _dump_tags
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
@@ -75,6 +77,21 @@ async def reindex_leds(session: AsyncSession = Depends(get_session)) -> dict:
     return {"total": len(rows), "changed": changed}
 
 
+@router.get("/system/undo", response_model=schemas.UndoPeekOut)
+async def peek_undo(session: AsyncSession = Depends(get_session)) -> dict:
+    """看一眼下一步会撤销什么（界面用它显示按钮状态）。"""
+    info = await undo_service.peek(session)
+    if info is None:
+        return {"label": "", "ts": None}
+    return {"label": info["label"], "ts": info["ts"]}
+
+
+@router.post("/system/undo", response_model=schemas.UndoOut)
+async def undo_last(session: AsyncSession = Depends(get_session)) -> dict:
+    """撤销最近一次操作。"""
+    return await undo_service.undo_last(session)
+
+
 def _group_key(comp: Component) -> tuple:
     """合并分组的键：名称 + 标称值 + 封装（都去空白、忽略大小写）。"""
     return (
@@ -122,6 +139,15 @@ async def merge_duplicates(
         })
         if dry_run:
             continue
+
+        # 撤销快照：保留者在前，被并掉的在后（还原时先让保留者松开这些格子）
+        undo_items = [{"id": keep.id, "before": undo_service.snapshot(keep)}]
+        for other in rest:
+            undo_items.append({"id": other.id, "before": undo_service.snapshot(other)})
+        await undo_service.record(
+            session, f"合并重复元件 {keep.name}（{len(members)} 条）",
+            {"op": "snapshot_many", "items": undo_items},
+        )
 
         keep.quantity = total
         tags = list(_as_list(keep.tags))
@@ -241,6 +267,8 @@ async def reset_data(
 
     await session.execute(delete(Transaction))
     await session.execute(delete(Component))
+    await session.execute(delete(BlockedSlot))   # 不可用标记属于仓库状态，一并清掉
+    await session.execute(delete(UndoEntry))     # 撤销栈也清空
     if body.reset_layout and layout is not None:
         layout.zone_count = DEFAULT_LAYOUT["zone_count"]
         layout.layer_count = DEFAULT_LAYOUT["layer_count"]

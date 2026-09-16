@@ -274,6 +274,33 @@ def value_matches(requested: str, candidate_value: str) -> Optional[bool]:
     return abs(left[1] - right[1]) / max(left[1], right[1]) < 0.02
 
 
+# 描述里能稳定抽出来的几个参数（立创详情没有这条料时的兜底，点哪条候选都有东西看）
+_DESC_PARAMS: tuple[tuple[str, str], ...] = (
+    ("精度", r"±\s*\d+(?:\.\d+)?\s*%"),
+    ("功率", r"\d+(?:\.\d+)?\s*(?:m|µ|u)?W\b"),
+    ("额定电压", r"\d+(?:\.\d+)?\s*V\b"),
+    ("温度系数", r"±\s*\d+\s*ppm/℃"),
+    ("工作温度", r"-?\d+℃~\+?\d+℃"),
+)
+
+
+def _params_from_description(description: str) -> dict[str, str]:
+    """从英文描述里抠出精度/功率/电压等，详情接口没有该料时也能显示点东西。"""
+    text = description or ""
+    out: dict[str, str] = {}
+    for label, pattern in _DESC_PARAMS:
+        match = re.search(pattern, text)
+        if match:
+            out[label] = match.group(0).replace(" ", "")
+    if re.search(r"thick film", text, re.IGNORECASE):
+        out["电阻类型"] = "厚膜电阻"
+    elif re.search(r"thin film", text, re.IGNORECASE):
+        out["电阻类型"] = "薄膜电阻"
+    elif re.search(r"mlcc|multilayer ceramic", text, re.IGNORECASE):
+        out["电容类型"] = "陶瓷电容"
+    return out
+
+
 def _as_int(value: Any) -> int:
     try:
         return int(value)
@@ -546,6 +573,9 @@ class LookupService:
             "capacitance_farads": row.get("capacitance_farads")}, description)
         if not value:
             value = _pick_value({}, description)
+        params = {k: v for k, v in list(attrs.items())[:8]}
+        if not params:
+            params = _params_from_description(description)
         return Candidate(
             lcsc=lcsc,
             mpn=str(row.get("mfr") or "")[:64],
@@ -556,7 +586,7 @@ class LookupService:
             stock=_as_int(row.get("stock")),
             price=_as_float(row.get("price") or row.get("price1")),
             source=source,
-            params={k: v for k, v in list(attrs.items())[:8]},
+            params=params,
             basic=bool(row.get("is_basic")),
             preferred=bool(row.get("is_preferred")),
         )
@@ -583,7 +613,8 @@ class LookupService:
             stock=_as_int(row.get("stockNumber")),
             datasheet=str(row.get("pdfUrl") or row.get("pdfLinkUrl") or "")[:200],
             source="lcsc",
-            params=dict(list(params.items())[:10]),
+            params=dict(list(params.items())[:10]) or _params_from_description(
+                str(row.get("productNameEn") or "")),
         )
 
     # ---------- 对外方法 ----------

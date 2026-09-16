@@ -1,7 +1,8 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
-  AdapterStatus, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  LookupResult, MergeResult, ReindexResult, ResetResult, SwapOut, TransactionRow,
+  AdapterStatus, BlockedSlot, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
+  LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, SwapOut,
+  TransactionRow, UndoOut, UndoPeek,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -69,7 +70,7 @@ export const api = {
 
   // 布局
   getLayout: () => request<LayoutConfig>('/api/v1/layout'),
-  putLayout: (payload: Omit<LayoutConfig, 'updated_at'>) =>
+  putLayout: (payload: Omit<LayoutConfig, 'updated_at' | 'blocked'>) =>
     request<LayoutConfig>('/api/v1/layout', { method: 'PUT', body: JSON.stringify(payload) }),
 
   // 元件
@@ -121,6 +122,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ component_id: componentId, amount }),
     }),
+
+  // 不可用格标记：返回标记后的完整列表
+  blockSlot: (pos: { zone: number; layer: number; slot: number }) =>
+    request<BlockedSlot[]>('/api/v1/layout/blocked', {
+      method: 'POST', body: JSON.stringify(pos),
+    }),
+  unblockSlot: (pos: { zone: number; layer: number; slot: number }) =>
+    request<BlockedSlot[]>('/api/v1/layout/blocked' + qs({ ...pos }), { method: 'DELETE' }),
+
+  // 撤销上一步
+  undoLast: () => request<UndoOut>('/api/v1/system/undo', { method: 'POST' }),
+  peekUndo: () => request<UndoPeek>('/api/v1/system/undo'),
+
+  // 单个候选的详情（点选候选时按编号补拉参数与数据手册）
+  lookupDetail: (lcsc: string) =>
+    request<LookupCandidate>('/api/v1/lookup/detail' + qs({ lcsc })),
 
   // 联网识别：任意输入 → 候选元件 + 可填表字段
   lookupAutofill: (text: string) =>

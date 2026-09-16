@@ -28,6 +28,8 @@ def _map_error(exc: Exception) -> HTTPException:
     """把库存域异常映射为带中文提示的 HTTP 错误。"""
     if isinstance(exc, stock_service.PositionBusy):
         return HTTPException(status_code=409, detail=f"槽位已被占用：{exc.occupant}")
+    if isinstance(exc, stock_service.SlotBlocked):
+        return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, stock_service.OutOfLayout):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, stock_service.StockShortage):
@@ -76,6 +78,8 @@ async def create_component(
         raise HTTPException(status_code=409, detail="槽位已被占用（并发写入）")
     except stock_service.PositionBusy as exc:
         raise HTTPException(status_code=409, detail=f"槽位已被占用：{exc.occupant}")
+    except stock_service.SlotBlocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except stock_service.OutOfLayout as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -90,7 +94,8 @@ async def add_component_slot(
     component = await _get_component(session, component_id)
     try:
         return await stock_service.add_slot(session, component, body.zone, body.layer, body.slot)
-    except (stock_service.PositionBusy, stock_service.OutOfLayout) as exc:
+    except (stock_service.PositionBusy, stock_service.SlotBlocked,
+            stock_service.OutOfLayout) as exc:
         raise _map_error(exc)
 
 
@@ -121,7 +126,7 @@ async def swap_components(
     b = await _get_component(session, body.b_id)
     try:
         a, b = await stock_service.swap_positions(session, a, b)
-    except stock_service.OutOfLayout as exc:
+    except (stock_service.OutOfLayout, stock_service.SlotBlocked) as exc:
         raise _map_error(exc)
     return {"a": a, "b": b}
 
@@ -158,7 +163,8 @@ async def update_component(
 
     try:
         return await stock_service.update_component(session, component, patch)
-    except (stock_service.PositionBusy, stock_service.OutOfLayout) as exc:
+    except (stock_service.PositionBusy, stock_service.SlotBlocked,
+            stock_service.OutOfLayout) as exc:
         raise _map_error(exc)
 
 

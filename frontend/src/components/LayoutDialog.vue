@@ -3,7 +3,7 @@ import { reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
-import { History, LayoutGrid, PackagePlus, Save, X } from '@lucide/vue'
+import { History, LayoutGrid, PackagePlus, Save, Undo2, X } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type { TransactionRow } from '../api/types'
@@ -21,6 +21,35 @@ const form = reactive({
   zone_layers: [3] as number[],
 })
 const transactions = ref<TransactionRow[]>([])
+// 撤销上一步：显示"将要撤销什么"，点一下按快照还原
+const undoLabel = ref('')
+const undoMsg = ref<string | null>(null)
+const undoBusy = ref(false)
+
+async function loadUndo() {
+  try {
+    undoLabel.value = (await api.peekUndo()).label ?? ''
+  } catch {
+    undoLabel.value = ''
+  }
+}
+
+async function runUndo() {
+  if (undoBusy.value) return
+  undoBusy.value = true
+  undoMsg.value = null
+  try {
+    const res = await api.undoLast()
+    undoMsg.value = res.ok ? `已撤销：${res.label}${res.message && res.message !== '已还原' ? '（' + res.message + '）' : ''}` : res.message
+    await bins.refreshAll()
+    await loadUndo()
+    transactions.value = await api.listTransactions(30)
+  } catch (e) {
+    undoMsg.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    undoBusy.value = false
+  }
+}
 const loading = ref(false)
 const saving = ref(false)
 const msg = ref<string | null>(null)
@@ -42,9 +71,12 @@ watch(
     form.zone_layers = Array.from({ length: form.zone_count }, (_, i) =>
       zoneLayers(bins.layout, i + 1))
     msg.value = null
+    undoMsg.value = null
     loading.value = true
-    try { transactions.value = await api.listTransactions(30) }
-    finally { loading.value = false }
+    try {
+      transactions.value = await api.listTransactions(30)
+      await loadUndo()
+    } finally { loading.value = false }
   },
 )
 
@@ -211,6 +243,16 @@ const kindLabel: Record<string, { text: string; color: string }> = {
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
                     <History :size="15" style="color: var(--accent-strong)" /> 最近操作
+                    <button class="btn ml-auto !py-1 text-[11.5px]" :disabled="undoBusy || !undoLabel"
+                            @click="runUndo">
+                      <Undo2 :size="13" class="mr-1 inline" />撤销上一步
+                    </button>
+                  </div>
+                  <div v-if="undoLabel" class="mb-2 truncate text-[11.5px]" style="color: var(--text-dim)">
+                    将撤销：{{ undoLabel }}
+                  </div>
+                  <div v-if="undoMsg" class="mb-2 text-[11.5px] font-semibold" style="color: var(--success)">
+                    {{ undoMsg }}
                   </div>
                   <div v-if="loading" class="py-4 text-center text-xs" style="color: var(--text-faint)">加载中…</div>
                   <ul v-else class="flex max-h-64 flex-col gap-1 overflow-y-auto pr-1">

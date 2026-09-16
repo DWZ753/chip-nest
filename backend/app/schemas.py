@@ -43,6 +43,22 @@ def _clean_tags_list(values: list, cap: int = 8) -> list[str]:
     return seen
 
 
+class BlockedSlotOut(BaseModel):
+    """被标记为不可用的格子（物理容器坏了等）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    zone: int
+    layer: int
+    slot: int
+
+
+class BlockedSlotIn(BaseModel):
+    zone: int = Field(ge=1)
+    layer: int = Field(ge=1)
+    slot: int = Field(ge=0)
+
+
 class LayoutOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,6 +71,8 @@ class LayoutOut(BaseModel):
     zone_sizes: list[list[int]] = []
     # 每区层数；长度与 zone_count 对齐（缺项回落 layer_count）
     zone_layers: list[int] = []
+    # 被标记不可用的格子
+    blocked: list[BlockedSlotOut] = []
     updated_at: dt.datetime
 
 
@@ -343,6 +361,22 @@ class DataSummaryOut(BaseModel):
     components: int = Field(ge=0)
     transactions: int = Field(ge=0)
     empty: bool
+
+
+class UndoOut(BaseModel):
+    """撤销结果：ok=False 表示栈空了或这条不支持撤销。"""
+
+    ok: bool
+    label: str = ""
+    message: str = ""
+    component_ids: list[int] = []
+
+
+class UndoPeekOut(BaseModel):
+    """给界面显示"将要撤销什么"。"""
+
+    label: str = ""
+    ts: dt.datetime | None = None
 
 
 class ReindexResult(BaseModel):
