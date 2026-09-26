@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import type { ComponentItem, LayoutConfig } from '../api/types'
 
 const DEFAULT_LAYOUT: LayoutConfig = {
@@ -11,6 +11,9 @@ const DEFAULT_LAYOUT: LayoutConfig = {
 }
 
 export interface BinPosition { zone: number; layer: number; slot: number }
+type SearchOption = 'matchCase' | 'wholeWord' | 'useRegex'
+
+const COMPONENT_PAGE_SIZE = 5000
 
 // 区显示名：自定义名优先，否则「第N区」
 // 某区的 [行, 列]：优先 zone_sizes，缺项用全局默认
@@ -40,6 +43,8 @@ export const useBinsStore = defineStore('bins', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const query = ref('')
+  const searchOptions = ref({ matchCase: false, wholeWord: false, useRegex: false })
+  const searchError = ref<string | null>(null)
   // 检索命中的元件 id（null=没有检索）：命中的高亮，没命中的在网格里变暗但**不消失**
   const matchedIds = ref<Set<number> | null>(null)
   // 检索命中闪烁集合（key -> 无需时间戳，1.6s 后清除使动画结束）
@@ -75,6 +80,8 @@ export const useBinsStore = defineStore('bins', () => {
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
   let queryTimer: ReturnType<typeof setTimeout> | undefined
+  let queryRevision = 0
+  let guideLedQueue = Promise.resolve()
 
   const compsByKey = computed<Record<string, ComponentItem>>(() => {
     const map: Record<string, ComponentItem> = {}
@@ -129,7 +136,7 @@ export const useBinsStore = defineStore('bins', () => {
     error.value = null
     try {
       // 永远拉全量：检索只用来标记命中，格子上的东西不能因为检索而消失
-      components.value = await api.listComponents()
+      components.value = await loadAllComponents()
       await applyQuery()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
@@ -162,27 +169,71 @@ export const useBinsStore = defineStore('bins', () => {
 
   // 只重算"哪些命中"，不动元件列表；命中卡片呼吸高亮一次
   async function applyQuery() {
+    const revision = ++queryRevision
     const q = query.value.trim()
     if (!q) {
       matchedIds.value = null
+      searchError.value = null
       return
     }
     try {
-      const hits = await api.listComponents({ q })
+      const options = searchOptions.value
+      const hits = await loadAllComponents({
+        q,
+        match_case: options.matchCase,
+        whole_word: options.wholeWord,
+        use_regex: options.useRegex,
+      })
+      if (revision !== queryRevision) return
       matchedIds.value = new Set(hits.map((c) => c.id))
-      addFlash(hits.map(positionKey), q)
-    } catch {
+      searchError.value = null
+      addFlash(hits.map(positionKey), JSON.stringify([q, options]))
+    } catch (e) {
+      if (revision !== queryRevision) return
       matchedIds.value = null
+      searchError.value = e instanceof ApiError && e.status === 422
+        ? '正则表达式无效' : '搜索失败'
+    }
+  }
+
+  async function loadAllComponents(
+    opts: {
+      q?: string; zone?: number; layer?: number
+      match_case?: boolean; whole_word?: boolean; use_regex?: boolean
+    } = {},
+  ): Promise<ComponentItem[]> {
+    const all: ComponentItem[] = []
+    let offset = 0
+
+    while (true) {
+      const page = await api.listComponents({
+        ...opts, limit: COMPONENT_PAGE_SIZE, offset,
+      })
+      all.push(...page)
+      if (page.length < COMPONENT_PAGE_SIZE) return all
+      offset += COMPONENT_PAGE_SIZE
     }
   }
 
   function setQuery(q: string) {
     query.value = q
-    if (!q.trim()) {
+    scheduleQuery()
+  }
+
+  function toggleSearchOption(option: SearchOption) {
+    searchOptions.value[option] = !searchOptions.value[option]
+    scheduleQuery()
+  }
+
+  function scheduleQuery() {
+    queryRevision++
+    searchError.value = null
+    window.clearTimeout(queryTimer)
+    if (!query.value.trim()) {
       lastFlashQuery = ''
       matchedIds.value = null
+      return
     }
-    window.clearTimeout(queryTimer)
     queryTimer = window.setTimeout(() => {
       void applyQuery()
     }, 320)
@@ -310,6 +361,8 @@ export const useBinsStore = defineStore('bins', () => {
   // 清空数据后：清掉检索词/高亮/引导，并把布局与元件整体重拉
   async function resetAfterWipe() {
     query.value = ''
+    queryRevision++
+    searchError.value = null
     lastFlashQuery = ''
     matchedIds.value = null
     window.clearTimeout(queryTimer)
@@ -320,13 +373,21 @@ export const useBinsStore = defineStore('bins', () => {
 
   // ---- BOM 引导联动 ----
   function setGuidePosition(pos: BinPosition | null) {
-    guideKey.value = pos ? positionKey(pos) : null
+    const key = pos ? positionKey(pos) : null
+    guideKey.value = key
+    const componentId = key ? compsByKey.value[key]?.id ?? null : null
+    guideLedQueue = guideLedQueue
+      .then(() => api.setGuideLed(componentId))
+      .then(() => undefined)
+      .catch(() => undefined)
   }
 
   return {
-    layout, components, loading, error, query, matchedIds, flashKeys, guideKey,
+    layout, components, loading, error, query, searchOptions, searchError,
+    matchedIds, flashKeys, guideKey,
     compsByKey, orphanComps,
-    refreshLayout, refreshComponents, refreshAll, setQuery, freeSlots, upsert,
+    refreshLayout, refreshComponents, refreshAll, setQuery, toggleSearchOption,
+    freeSlots, upsert,
     updateZoneName,
     moveComponent, swapComponents, addSlot, removeSlot, blockAt, unblockAt, undoLast,
     removeComponent, adjustStock, relocateOrphans, setGuidePosition, slotOwner,

@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
-  AdapterStatus, BlockedSlot, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, SwapOut,
+  AdapterStatus, BackupSnapshot, BlockedSlot, BomLineOut, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
+  LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, RestoreResult, SwapOut,
   TransactionRow, UndoOut, UndoPeek,
 } from './types'
 
@@ -50,7 +50,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T
 }
 
-function qs(params: Record<string, string | number | null | undefined>): string {
+function qs(params: Record<string, string | number | boolean | null | undefined>): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') sp.set(k, String(v))
@@ -74,7 +74,10 @@ export const api = {
     request<LayoutConfig>('/api/v1/layout', { method: 'PUT', body: JSON.stringify(payload) }),
 
   // 元件
-  listComponents: (opts: { q?: string; zone?: number; layer?: number; limit?: number } = {}) =>
+  listComponents: (opts: {
+    q?: string; zone?: number; layer?: number; limit?: number; offset?: number
+    match_case?: boolean; whole_word?: boolean; use_regex?: boolean
+  } = {}) =>
     request<ComponentItem[]>('/api/v1/components' + qs(opts)),
   createComponent: (payload: Record<string, unknown>) =>
     request<ComponentItem>('/api/v1/components', { method: 'POST', body: JSON.stringify(payload) }),
@@ -117,6 +120,10 @@ export const api = {
     request<BomParseOut>('/api/v1/bom/parse', { method: 'POST', body: JSON.stringify({ text }) }),
   planBom: (text: string) =>
     request<BomPlan>('/api/v1/bom/plan', { method: 'POST', body: JSON.stringify({ text }) }),
+  planBomRows: (lines: BomLineOut[]) =>
+    request<BomPlan>('/api/v1/bom/plan-rows', {
+      method: 'POST', body: JSON.stringify({ lines }),
+    }),
   pickBom: (componentId: number, amount: number) =>
     request<ComponentItem>('/api/v1/bom/pick', {
       method: 'POST',
@@ -151,9 +158,18 @@ export const api = {
   // 数据概况：清空按钮据此禁用（没有可清内容时不给点）
   dataSummary: () => request<DataSummary>('/api/v1/system/data-summary'),
 
+  setGuideLed: (componentId: number | null) =>
+    request<{ ok: boolean }>('/api/v1/system/guide-led', {
+      method: 'POST', body: JSON.stringify({ component_id: componentId }),
+    }),
+
   // 一键清空：删光元件与流水，可选把布局恢复初始状态（后端先自动备份）
   resetData: (payload: { confirm: string; reset_layout: boolean }) =>
     request<ResetResult>('/api/v1/system/reset', {
+      method: 'POST', body: JSON.stringify(payload),
+    }),
+  restoreData: (payload: { confirm: string; backup: BackupSnapshot }) =>
+    request<RestoreResult>('/api/v1/system/restore', {
       method: 'POST', body: JSON.stringify(payload),
     }),
 

@@ -21,12 +21,20 @@ router = APIRouter(prefix="/api/v1/bom", tags=["bom"])
 async def import_bom_excel(
     file: UploadFile = File(...),
 ) -> schemas.BomParseOut:
-    """上传 .xlsx BOM 文件：识别常见表头后转成与 /bom/parse 同构的行列表。"""
+    """上传 .xlsx 或 CSV BOM 文件并识别常见表头。"""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=422, detail="文件为空")
+    suffix = (file.filename or "").lower().rsplit(".", 1)[-1]
     try:
-        lines = bom_service.parse_excel_bytes(data)
+        if suffix == "xlsx":
+            lines = bom_service.parse_excel_bytes(data)
+        elif suffix == "csv":
+            lines = bom_service.parse_csv_bytes(data)
+        else:
+            raise HTTPException(
+                status_code=422, detail="仅支持 .xlsx 和 .csv 文件",
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return schemas.BomParseOut(
@@ -51,6 +59,22 @@ async def plan_bom(
 ) -> schemas.BomPlanOut:
     """解析 + 库存打分匹配：足料出引导步骤，缺料/找不到进 missing。"""
     lines = bom_service.parse_text(body.text)
+    return await _build_plan(lines, session)
+
+
+@router.post("/plan-rows", response_model=schemas.BomPlanOut)
+async def plan_bom_rows(
+    body: schemas.BomPlanRows, session: AsyncSession = Depends(get_session)
+) -> schemas.BomPlanOut:
+    """按结构化 BOM 行规划，料号字段参与精确匹配。"""
+    lines = [bom_service.BomLine(**line.model_dump()) for line in body.lines]
+    return await _build_plan(lines, session)
+
+
+async def _build_plan(
+    lines: list[bom_service.BomLine], session: AsyncSession
+) -> schemas.BomPlanOut:
+    """把 BOM 行和库存合并成取料步骤与缺料清单。"""
     if not lines:
         raise HTTPException(status_code=422, detail="没有可识别的元件行")
 

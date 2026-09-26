@@ -424,8 +424,18 @@ html.light .chip-tag { color: #5a5ecb; }
 }
 .bin-card.card-shared:hover { border-color: var(--accent); }
 /* 检索时没命中的卡片：变暗但留在原位（格子里原来有东西，不能凭空消失） */
-.bin-card.card-dimmed { opacity: 0.28; filter: saturate(0.45); }
-.bin-card.card-dimmed:hover { opacity: 0.8; filter: none; }
+.bin-card.card-dimmed, .card-blocked.card-dimmed {
+  opacity: 0.28;
+  filter: saturate(0.45);
+}
+.bin-card.card-dimmed:hover, .card-blocked.card-dimmed:hover {
+  opacity: 0.8;
+  filter: none;
+}
+.search-option-active {
+  color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 18%, transparent) !important;
+}
 /* 不可用格：斜纹底 + 禁用图标，既不占位也不给点新建 */
 .card-blocked {
   border: 1px dashed color-mix(in srgb, var(--warn) 45%, var(--line-strong));
@@ -435,7 +445,7 @@ html.light .chip-tag { color: #5a5ecb; }
     transparent 6px 12px
   );
   color: color-mix(in srgb, var(--warn) 75%, var(--text-faint));
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color 0.2s, background 0.2s, opacity 0.2s, filter 0.2s;
 }
 .card-blocked.blocked-active:hover {
   border-style: solid;

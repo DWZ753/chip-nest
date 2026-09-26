@@ -26,18 +26,35 @@ from app.models import (
     Transaction, UndoEntry,
 )
 from app.services import undo as undo_service
+from app.services.search import build_search_text
 from app.services.stock import _dump_display_tags, _dump_tags
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
 
 # 前端确认框要求手输的确认词（改这里要同步改 AppSettingsDialog.vue）
 RESET_CONFIRM_WORD = "清空"
+RESTORE_CONFIRM_WORD = "恢复"
 
 
 @router.get("/system/status")
 async def system_status() -> dict:
     """返回 {mode: serial|mock, connected, device, error}。"""
     return get_manager().status()
+
+
+@router.post("/system/guide-led", response_model=schemas.GuideLedResult)
+async def set_guide_led(
+    body: schemas.GuideLedRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """设置或清除 BOM 引导灯位。"""
+    component = None
+    if body.component_id is not None:
+        component = await session.get(Component, body.component_id)
+        if component is None:
+            raise HTTPException(status_code=404, detail="元件不存在")
+    await get_manager().set_guide_led(component)
+    return {"ok": True}
 
 
 @router.get("/system/data-summary", response_model=schemas.DataSummaryOut)
@@ -211,11 +228,13 @@ def _write_backup(
     components: Sequence[Component],
     transactions: Sequence[Transaction],
     layout: Optional[LayoutConfig],
+    blocked_slots: Sequence[BlockedSlot] = (),
+    reason: str = "reset",
 ) -> Path:
     """整份导出为 JSON（UTF-8，中文不转义），供用户事后手工找回数据。"""
     payload = {
         "app": "ChipNest",
-        "reason": "reset",
+        "reason": reason,
         "exported_at": dt.datetime.now().isoformat(timespec="seconds"),
         "layout": None if layout is None else {
             "zone_count": layout.zone_count,
@@ -232,6 +251,10 @@ def _write_backup(
         "transactions": [
             schemas.TransactionOut.model_validate(t).model_dump(mode="json")
             for t in transactions
+        ],
+        "blocked_slots": [
+            schemas.BlockedSlotOut.model_validate(slot).model_dump()
+            for slot in blocked_slots
         ],
     }
     path = _backup_path()
@@ -254,10 +277,11 @@ async def reset_data(
     components = list((await session.scalars(select(Component))).all())
     transactions = list((await session.scalars(select(Transaction))).all())
     layout = await session.scalar(select(LayoutConfig).where(LayoutConfig.id == 1))
+    blocked_slots = list((await session.scalars(select(BlockedSlot))).all())
 
     # 先备份再删：备份写不成功就直接报错，数据保持原样
     try:
-        backup = _write_backup(components, transactions, layout)
+        backup = _write_backup(components, transactions, layout, blocked_slots)
     except OSError as exc:
         logger.exception("清空前的备份写入失败")
         raise HTTPException(status_code=500,
@@ -280,7 +304,9 @@ async def reset_data(
     await session.commit()
 
     # 灯带复位属于收尾动作，硬件不在线也不能影响清空结果
-    await get_manager().clear_leds(led_indexes)
+    manager = get_manager()
+    await manager.set_guide_led(None)
+    await manager.clear_leds(led_indexes)
 
     logger.info("已清空数据：元件 {} 个、流水 {} 条、布局重置={}，备份 {}",
                 len(components), len(transactions), body.reset_layout, backup)
@@ -289,4 +315,189 @@ async def reset_data(
         "deleted_transactions": len(transactions),
         "backup_path": str(backup),
         "layout_reset": bool(body.reset_layout),
+    }
+
+
+def _validate_backup(backup: schemas.BackupSnapshot) -> None:
+    """校验备份中的元件、附加格和停用格没有位置冲突。"""
+    seen_ids: set[int] = set()
+    occupied: set[tuple[int, int, int]] = set()
+    for component in backup.components:
+        if component.id < 1 or component.id in seen_ids:
+            raise HTTPException(
+                status_code=422, detail="备份中的元件编号重复或无效"
+            )
+        seen_ids.add(component.id)
+        if component.quantity < 0 or component.threshold < 0:
+            raise HTTPException(status_code=422, detail="备份中的库存数量无效")
+        if component.led_index is not None and component.led_index < 0:
+            raise HTTPException(status_code=422, detail="备份中的灯带序号无效")
+
+        positions = [(component.zone, component.layer, component.slot)]
+        positions.extend(
+            (slot.zone, slot.layer, slot.slot) for slot in component.slots
+        )
+        for position in positions:
+            if position[0] < 1 or position[1] < 1 or position[2] < 0:
+                raise HTTPException(
+                    status_code=422, detail="备份中的格子位置无效"
+                )
+            if position in occupied:
+                raise HTTPException(
+                    status_code=422, detail="备份中的格子位置重复"
+                )
+            occupied.add(position)
+
+    blocked_seen: set[tuple[int, int, int]] = set()
+    for slot in backup.blocked_slots:
+        position = (slot.zone, slot.layer, slot.slot)
+        if position[0] < 1 or position[1] < 1 or position[2] < 0:
+            raise HTTPException(status_code=422, detail="备份中的停用格位置无效")
+        if position in occupied or position in blocked_seen:
+            raise HTTPException(
+                status_code=422, detail="备份中的格子位置重复"
+            )
+        blocked_seen.add(position)
+
+    transaction_ids: set[int] = set()
+    for transaction in backup.transactions:
+        if transaction.id < 1 or transaction.id in transaction_ids:
+            raise HTTPException(status_code=422, detail="备份中的流水编号重复或无效")
+        transaction_ids.add(transaction.id)
+        if (transaction.component_id is not None
+                and transaction.component_id not in seen_ids):
+            raise HTTPException(status_code=422, detail="备份中的流水引用了不存在的元件")
+
+
+@router.post("/system/restore", response_model=schemas.RestoreResult)
+async def restore_data(
+    body: schemas.RestoreRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """从 JSON 备份恢复仓库内容；覆盖前先备份当前数据。"""
+    if body.confirm.strip() != RESTORE_CONFIRM_WORD:
+        raise HTTPException(
+            status_code=400,
+            detail=f"请输入「{RESTORE_CONFIRM_WORD}」两个字确认后再恢复",
+        )
+
+    _validate_backup(body.backup)
+    current_components = list((await session.scalars(select(Component))).all())
+    current_transactions = list((await session.scalars(select(Transaction))).all())
+    current_layout = await session.scalar(
+        select(LayoutConfig).where(LayoutConfig.id == 1)
+    )
+    current_blocked = list((await session.scalars(select(BlockedSlot))).all())
+    try:
+        backup_path = _write_backup(
+            current_components, current_transactions, current_layout,
+            current_blocked, reason="restore",
+        )
+    except OSError as exc:
+        logger.exception("恢复前的备份写入失败")
+        raise HTTPException(
+            status_code=500, detail=f"备份写入失败，已取消恢复：{exc}"
+        ) from exc
+
+    old_leds = [c.led_index for c in current_components]
+    new_leds = [c.led_index for c in body.backup.components]
+    try:
+        await session.execute(delete(Transaction))
+        await session.execute(delete(ComponentSlot))
+        await session.execute(delete(Component))
+        await session.execute(delete(BlockedSlot))
+        await session.execute(delete(UndoEntry))
+
+        layout_data = body.backup.layout
+        if layout_data is None:
+            layout_values = {
+                **DEFAULT_LAYOUT,
+                "zone_names": [],
+                "zone_sizes": [],
+                "zone_layers": [],
+            }
+        else:
+            layout_values = layout_data.model_dump()
+        layout = current_layout or LayoutConfig(id=1)
+        layout.zone_count = layout_values["zone_count"]
+        layout.layer_count = layout_values["layer_count"]
+        layout.row_count = layout_values["row_count"]
+        layout.col_count = layout_values["col_count"]
+        layout.zone_names = json.dumps(
+            layout_values["zone_names"], ensure_ascii=False
+        )
+        layout.zone_sizes = json.dumps(layout_values["zone_sizes"])
+        layout.zone_layers = json.dumps(layout_values["zone_layers"])
+        session.add(layout)
+
+        restored_components: list[Component] = []
+        for item in body.backup.components:
+            component = Component(
+                id=item.id,
+                name=item.name,
+                value=item.value,
+                package=item.package,
+                manufacturer_part=item.manufacturer_part,
+                supplier_part=item.supplier_part,
+                tags=json.dumps(item.tags, ensure_ascii=False),
+                display_tags=json.dumps(item.display_tags, ensure_ascii=False),
+                display_fields=json.dumps(item.display_fields),
+                card_items=json.dumps(item.card_items, ensure_ascii=False),
+                quantity=item.quantity,
+                threshold=item.threshold,
+                zone=item.zone,
+                layer=item.layer,
+                slot=item.slot,
+                led_index=item.led_index,
+                search_text=build_search_text(
+                    item.name, item.value or "", item.package or "",
+                    item.manufacturer_part or "", " ".join(item.tags),
+                ),
+            )
+            component.slots = [
+                ComponentSlot(zone=slot.zone, layer=slot.layer, slot=slot.slot)
+                for slot in item.slots
+            ]
+            session.add(component)
+            restored_components.append(component)
+
+        for slot in body.backup.blocked_slots:
+            session.add(BlockedSlot(zone=slot.zone, layer=slot.layer, slot=slot.slot))
+        for item in body.backup.transactions:
+            session.add(Transaction(
+                id=item.id,
+                ts=item.ts,
+                kind=item.kind,
+                component_id=item.component_id,
+                delta=item.delta,
+                detail=item.detail,
+                source=item.source,
+            ))
+        session.add(Transaction(
+            kind="adjust",
+            delta=0,
+            source="system",
+            detail=(f"从备份恢复：元件 {len(body.backup.components)} 个，"
+                    f"流水 {len(body.backup.transactions)} 条，"
+                    f"停用格 {len(body.backup.blocked_slots)} 个"),
+        ))
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+    manager = get_manager()
+    await manager.set_guide_led(None)
+    await manager.clear_leds(old_leds + new_leds)
+    for component in restored_components:
+        await manager.sync_component_led(component)
+
+    logger.info("从备份恢复：元件 {} 个、流水 {} 条、停用格 {} 个，覆盖前备份 {}",
+                len(body.backup.components), len(body.backup.transactions),
+                len(body.backup.blocked_slots), backup_path)
+    return {
+        "components": len(body.backup.components),
+        "transactions": len(body.backup.transactions),
+        "blocked_slots": len(body.backup.blocked_slots),
+        "backup_path": str(backup_path),
     }

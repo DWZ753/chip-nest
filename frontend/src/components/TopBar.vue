@@ -42,7 +42,7 @@ const { dark, toggle } = useTheme()
       </div>
     </div>
 
-    <!-- 中央巨大圆润搜索框 -->
+    <!-- 搜索框与匹配选项 -->
     <div class="relative mx-auto w-full max-w-2xl flex-1">
       <Search
         :size="18"
@@ -51,11 +51,44 @@ const { dark, toggle } = useTheme()
       />
       <input
         v-model="bins.query"
-        class="input !rounded-full !py-2.5 !pl-11 !pr-4 text-[15px]"
-        placeholder="搜索元件：名称 / 阻值 / 封装 / 拼音首字母，如 10k、0603、dz…"
+        class="input !rounded-full !py-2.5 !pl-11 !pr-36 text-[15px]"
+        placeholder="搜索元件"
         type="search"
+        :aria-invalid="!!bins.searchError"
         @input="bins.setQuery(($event.target as HTMLInputElement).value)"
       />
+      <div class="absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+        <button
+          type="button"
+          class="icon-btn !h-7 !w-7 !rounded-lg text-xs font-bold"
+          :class="{ 'search-option-active': bins.searchOptions.matchCase }"
+          title="区分大小写"
+          aria-label="区分大小写"
+          :aria-pressed="bins.searchOptions.matchCase"
+          @click="bins.toggleSearchOption('matchCase')"
+        >Aa</button>
+        <button
+          type="button"
+          class="icon-btn !h-7 !w-7 !rounded-lg text-xs font-bold underline"
+          :class="{ 'search-option-active': bins.searchOptions.wholeWord }"
+          title="全字匹配"
+          aria-label="全字匹配"
+          :aria-pressed="bins.searchOptions.wholeWord"
+          @click="bins.toggleSearchOption('wholeWord')"
+        >ab</button>
+        <button
+          type="button"
+          class="icon-btn !h-7 !w-7 !rounded-lg text-xs font-bold"
+          :class="{ 'search-option-active': bins.searchOptions.useRegex }"
+          title="使用正则表达式"
+          aria-label="使用正则表达式"
+          :aria-pressed="bins.searchOptions.useRegex"
+          @click="bins.toggleSearchOption('useRegex')"
+        >.*</button>
+      </div>
+      <div v-if="bins.searchError" class="absolute left-4 top-full mt-1 rounded-lg px-2 py-1 text-xs"
+           style="color: var(--danger); background: var(--panel); border: 1px solid var(--danger)"
+           role="status">{{ bins.searchError }}</div>
     </div>
 
     <!-- 右侧操作 -->

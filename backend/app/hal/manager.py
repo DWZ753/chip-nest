@@ -7,7 +7,7 @@
 事件→LED 联动（订阅 services 层已发射的总线事件）：
 - stock.changed  → 按库存规则：quantity < threshold 常亮红，充足熄灭；
 - component.removed → 对应灯熄灭。
-BOM 引导的橙色高亮预留 set_guide_led()，M6 前端经事件接入。
+BOM 引导由 system 路由设置橙色高亮。
 """
 
 from typing import Awaitable, Callable, Optional
@@ -18,6 +18,7 @@ from app import events
 from app.hal.base import AdapterState, BaseAdapter
 from app.hal.mock import MockAdapter
 from app.hal.serial_adapter import SerialAdapter
+from app.models import Component
 
 # LED 语义色（HANDOFF §5：不足红 / 充足灭 / 引导橙）
 RED = (255, 0, 0)
@@ -42,6 +43,8 @@ class AdapterManager:
         self._started = False
         self._events_bound = False
         self._subscribers: list[StatusHandler] = []
+        self._guide_led_index: Optional[int] = None
+        self._guide_base_color = OFF
         self._serial.on_change = self._on_serial_changed
 
     # ---------- 生命周期 ----------
@@ -115,10 +118,22 @@ class AdapterManager:
         await self._notify()
 
     # ---------- LED 下发 ----------
-    async def set_guide_led(self, led_index: Optional[int]) -> None:
-        """BOM 引导高亮当前步（橙）；传 None 表示引导结束。"""
-        if led_index is None:
+    async def set_guide_led(self, component: Optional[Component]) -> None:
+        """高亮 BOM 当前步；切换或结束时恢复库存灯态。"""
+        led_index = component.led_index if component is not None else None
+        if led_index == self._guide_led_index:
             return
+
+        if self._guide_led_index is not None:
+            await self._send(self._guide_led_index, *self._guide_base_color)
+
+        self._guide_led_index = None
+        self._guide_base_color = OFF
+        if component is None or led_index is None:
+            return
+
+        self._guide_led_index = led_index
+        self._guide_base_color = self._stock_color(component)
         await self._send(led_index, *ORANGE)
 
     async def clear_leds(self, indexes) -> None:
@@ -136,20 +151,41 @@ class AdapterManager:
 
     # ---------- events 总线订阅（勿改 services 层发射点） ----------
     async def _on_stock_changed(self, component) -> None:
-        await self._sync_led(component)
+        await self.sync_component_led(component)
 
     async def _on_component_removed(self, component) -> None:
-        if component.led_index is not None:
-            await self._send(component.led_index, *OFF)
+        led_index = component.led_index
+        if led_index is None:
+            return
+        if led_index == self._guide_led_index:
+            self._guide_led_index = None
+            self._guide_base_color = OFF
+        await self._send(led_index, *OFF)
 
     async def _sync_led(self, component) -> None:
         """按库存规则点亮：低于阈值红，充足灭；无灯位跳过。"""
         if component.led_index is None:
             return
+        color = self._stock_color(component)
+        if component.led_index == self._guide_led_index:
+            self._guide_base_color = color
+            await self._send(component.led_index, *ORANGE)
+            return
+        await self._send(component.led_index, *color)
+
+    async def sync_component_led(self, component) -> None:
+        """同步单个元件的库存灯态；硬件错误不影响上层数据操作。"""
+        try:
+            await self._sync_led(component)
+        except Exception:
+            logger.exception("同步库存灯态失败 id={}", getattr(component, "id", None))
+
+    @staticmethod
+    def _stock_color(component) -> tuple[int, int, int]:
+        """返回元件当前库存对应的灯色。"""
         if (component.quantity or 0) < (component.threshold or 0):
-            await self._send(component.led_index, *RED)
-        else:
-            await self._send(component.led_index, *OFF)
+            return RED
+        return OFF
 
 
 _manager: Optional[AdapterManager] = None

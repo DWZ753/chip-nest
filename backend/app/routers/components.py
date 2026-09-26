@@ -4,8 +4,10 @@
 如 "0603" 可搜出所有 0603 封装，字母 "dz" 可搜出「电阻」。
 """
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +15,7 @@ from app import schemas
 from app.db import get_session
 from app.models import Component
 from app.services import stock as stock_service
+from app.services.search import compile_search_pattern, component_search_fields
 
 router = APIRouter(prefix="/api/v1/components", tags=["components"])
 
@@ -43,6 +46,10 @@ async def list_components(
     zone: int | None = Query(default=None, ge=1),
     layer: int | None = Query(default=None, ge=1),
     limit: int = Query(default=2000, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+    match_case: bool = False,
+    whole_word: bool = False,
+    use_regex: bool = False,
     session: AsyncSession = Depends(get_session),
 ) -> list[Component]:
     """元件列表：可按 q 模糊检索、按区/层过滤，按位置排序。"""
@@ -52,8 +59,32 @@ async def list_components(
     if layer is not None:
         stmt = stmt.where(Component.layer == layer)
     if q and q.strip():
-        stmt = stmt.where(Component.search_text.contains(q.strip().lower(), autoescape=True))
-    stmt = stmt.limit(limit)
+        query = q.strip()
+        if match_case or whole_word or use_regex:
+            try:
+                pattern = compile_search_pattern(
+                    query, match_case, whole_word, use_regex,
+                )
+            except re.error as exc:
+                raise HTTPException(
+                    status_code=422, detail="正则表达式无效"
+                ) from exc
+            rows = (await session.scalars(stmt)).all()
+            matches = [
+                component for component in rows
+                if any(pattern.search(field) for field in
+                       component_search_fields(component))
+            ]
+            return matches[offset:offset + limit]
+
+        lowered = query.lower()
+        stmt = stmt.where(or_(
+            Component.search_text.contains(lowered, autoescape=True),
+            func.lower(Component.supplier_part).contains(
+                lowered, autoescape=True,
+            ),
+        ))
+    stmt = stmt.limit(limit).offset(offset)
     rows = (await session.scalars(stmt)).all()
     return list(rows)
 

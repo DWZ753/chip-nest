@@ -403,6 +403,73 @@ class ResetResult(BaseModel):
     layout_reset: bool
 
 
+class GuideLedRequest(BaseModel):
+    """当前 BOM 引导元件；component_id 为空时结束灯带引导。"""
+
+    component_id: Optional[int] = Field(default=None, ge=1)
+
+
+class GuideLedResult(BaseModel):
+    ok: bool
+
+
+class BackupLayout(BaseModel):
+    zone_count: int = Field(ge=1, le=9)
+    layer_count: int = Field(ge=1, le=20)
+    row_count: int = Field(ge=1, le=20)
+    col_count: int = Field(ge=1, le=50)
+    zone_names: list[str] = Field(default=[], max_length=9)
+    zone_sizes: list[list[int]] = Field(default=[], max_length=9)
+    zone_layers: list[int] = Field(default=[], max_length=9)
+
+    @field_validator("zone_sizes")
+    @classmethod
+    def _check_backup_zone_sizes(cls, values):
+        cleaned = []
+        for item in values or []:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                raise ValueError("zone_sizes 每项必须是 [行, 列]")
+            rows, cols = int(item[0]), int(item[1])
+            if not 1 <= rows <= 20 or not 1 <= cols <= 50:
+                raise ValueError("每区行数 1-20、列数 1-50")
+            cleaned.append([rows, cols])
+        return cleaned
+
+    @field_validator("zone_layers")
+    @classmethod
+    def _check_backup_zone_layers(cls, values):
+        cleaned = [int(item) for item in values or []]
+        if any(not 1 <= item <= 20 for item in cleaned):
+            raise ValueError("每区层数 1-20")
+        return cleaned
+
+
+class BackupSnapshot(BaseModel):
+    """数据维护生成的 JSON 备份。"""
+
+    app: Literal["ChipNest"]
+    reason: str = "reset"
+    exported_at: str = ""
+    layout: Optional[BackupLayout] = None
+    components: list[ComponentOut]
+    transactions: list[TransactionOut]
+    blocked_slots: list[BlockedSlotOut] = []
+
+
+class RestoreRequest(BaseModel):
+    """用确认词恢复一份 ChipNest JSON 备份。"""
+
+    confirm: str = Field(min_length=1, max_length=16)
+    backup: BackupSnapshot
+
+
+class RestoreResult(BaseModel):
+    components: int = Field(ge=0)
+    transactions: int = Field(ge=0)
+    blocked_slots: int = Field(ge=0)
+    backup_path: str
+
+
 # ---------- BOM 导入 / 引导取料 ----------
 
 class BomImport(BaseModel):
@@ -424,6 +491,12 @@ class BomLineOut(BaseModel):
     quantity: int = Field(ge=0)
     manufacturer_part: Optional[str] = None
     supplier_part: Optional[str] = None
+
+
+class BomPlanRows(BaseModel):
+    """按已解析行规划库存，保留 MPN 和供应商料号。"""
+
+    lines: list[BomLineOut] = Field(min_length=1, max_length=2000)
 
 
 class BomParseOut(BaseModel):

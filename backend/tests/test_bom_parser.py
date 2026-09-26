@@ -21,9 +21,12 @@ def _fields(line: bom_service.BomLine) -> dict:
 
 
 def _comp(cid: int, name: str, value: str | None, package: str | None,
-          quantity: int, led: int | None) -> SimpleNamespace:
+          quantity: int, led: int | None, manufacturer_part: str | None = None,
+          supplier_part: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(id=cid, name=name, value=value, package=package,
-                           quantity=quantity, led_index=led)
+                           quantity=quantity, led_index=led,
+                           manufacturer_part=manufacturer_part,
+                           supplier_part=supplier_part)
 
 
 # ---------- 纯函数：解析 ----------
@@ -124,14 +127,35 @@ def test_plan_pure_package_and_chinese_name_match():
     assert plan["missing"][0]["reason"] == "not_found"  # 贴片电阻无对应槽位
 
 
+def test_plan_pure_prefers_exact_part_numbers():
+    line = bom_service.BomLine(
+        raw="RC0603-10K", name="特殊电阻", value="1k", package="0805",
+        quantity=1, manufacturer_part="RC0603-10K", supplier_part="C12345",
+    )
+    comps = [
+        _comp(1, "电阻", "10k", "0603", 10, 0,
+              manufacturer_part="OTHER", supplier_part="C99999"),
+        _comp(2, "电阻", "10k", "0603", 10, 1,
+              manufacturer_part="RC0603-10K", supplier_part="C12345"),
+    ]
+
+    plan = bom_service.plan_pure([line], comps)
+
+    assert [step["component"].id for step in plan["steps"]] == [2]
+    assert plan["missing"] == []
+
+
 # ---------- API：plan / pick 全链路 ----------
 
 async def _seed(client, slot: int, *, name: str, value: str | None,
-                package: str | None, quantity: int) -> dict:
+                package: str | None, quantity: int,
+                manufacturer_part: str | None = None,
+                supplier_part: str | None = None) -> dict:
     resp = await client.post("/api/v1/components", json={
         "name": name, "value": value, "package": package,
         "quantity": quantity, "threshold": 5, "zone": 1, "layer": 1,
-        "slot": slot,
+        "slot": slot, "manufacturer_part": manufacturer_part,
+        "supplier_part": supplier_part,
     })
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -210,6 +234,26 @@ async def test_bom_pick_audit_kind_and_source(client):
         assert pick_rows == 1  # 失败/并发时绝不重复落流水
 
 
+async def test_bom_plan_rows_matches_supplier_part(client):
+    await _seed(client, 0, name="电阻", value="10k", package="0603",
+                quantity=5, manufacturer_part="OTHER", supplier_part="C99999")
+    exact = await _seed(
+        client, 1, name="电阻", value="10k", package="0603", quantity=5,
+        manufacturer_part="RC0603-10K", supplier_part="C12345",
+    )
+
+    resp = await client.post("/api/v1/bom/plan-rows", json={
+        "lines": [{
+            "raw": "RC0603-10K", "name": "电阻", "value": "10k",
+            "package": "0603", "quantity": 1,
+            "manufacturer_part": "RC0603-10K", "supplier_part": "C12345",
+        }],
+    })
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["steps"][0]["component"]["id"] == exact["id"]
+
+
 def _make_bom_xlsx() -> bytes:
     """构造 EasyEDA/嘉立创风格表头的最小 xlsx。"""
     buf = BytesIO()
@@ -258,3 +302,43 @@ async def test_bom_import_excel_endpoint(client):
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert resp.status_code == 422 and "xlsx" in resp.json()["detail"]
+
+
+def test_csv_parser_reads_table_headers_and_part_numbers():
+    data = (
+        "零件清单\n"
+        "Name,Footprint,Quantity,MPN,LCSC\n"
+        "电容,C0402,3,CC0402KRX7R7BB104,C14663\n"
+        "电阻,R0603,2,RC0603-10K\n"
+    ).encode("gb18030")
+
+    lines = bom_service.parse_csv_bytes(data)
+
+    assert len(lines) == 2
+    row = lines[0].to_dict()
+    assert row["name"] == "电容"
+    assert row["package"] == "0402"
+    assert row["quantity"] == 3
+    assert row["manufacturer_part"] == "CC0402KRX7R7BB104"
+    assert row["supplier_part"] == "C14663"
+    assert lines[1].supplier_part is None
+
+
+async def test_bom_import_csv_and_reject_xls(client):
+    data = (
+        "Name,Footprint,Quantity,MPN,LCSC\n"
+        "电容,C0402,3,CC0402KRX7R7BB104,C14663\n"
+    ).encode("utf-8-sig")
+    resp = await client.post(
+        "/api/v1/bom/import",
+        files={"file": ("bom.csv", data, "text/csv")},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["lines"][0]["supplier_part"] == "C14663"
+
+    resp = await client.post(
+        "/api/v1/bom/import",
+        files={"file": ("bom.xls", b"legacy workbook", "application/vnd.ms-excel")},
+    )
+    assert resp.status_code == 422
+    assert "xlsx" in resp.json()["detail"] and "csv" in resp.json()["detail"]

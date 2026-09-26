@@ -727,7 +727,10 @@ async function fixOrphans() {
                 v-else-if="cell.kind === 'blocked'"
                 class="card-blocked grid min-h-[96px] cursor-pointer place-items-center rounded-[14px]"
                 :style="cellStyle(cell)"
-                :class="{ 'blocked-active': blockMode }"
+                :class="{
+                  'blocked-active': blockMode,
+                  'card-dimmed': bins.matchedIds !== null,
+                }"
                 :title="blockMode ? '恢复可用' : '不可用'"
                 @click="blockMode && toggleBlockAt(cell.pos)"
               >

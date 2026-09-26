@@ -123,6 +123,100 @@ async def test_reset_keeps_layout_when_asked(client):
     assert (await client.get("/api/v1/components")).json() == []
 
 
+async def test_restore_round_trips_backup_and_saves_overwritten_data(client):
+    """恢复清空前的备份，并先保存将被覆盖的当前数据。"""
+    await _set_layout(client)
+    component = await _create(
+        client, slot=0, manufacturer_part="STM32F103C8T6",
+        supplier_part="C82899",
+    )
+    added_slot = await client.post(
+        f"/api/v1/components/{component['id']}/slots",
+        json={"zone": 1, "layer": 1, "slot": 1},
+    )
+    assert added_slot.status_code == 200, added_slot.text
+    blocked = await client.post(
+        "/api/v1/layout/blocked",
+        json={"zone": 1, "layer": 1, "slot": 3},
+    )
+    assert blocked.status_code == 200, blocked.text
+    stock = await client.post(
+        f"/api/v1/components/{component['id']}/stock",
+        json={"delta": -2, "note": "测试出库"},
+    )
+    assert stock.status_code == 200, stock.text
+
+    reset = await client.post("/api/v1/system/reset", json={"confirm": "清空"})
+    assert reset.status_code == 200, reset.text
+    backup_path = Path(reset.json()["backup_path"])
+    backup = json.loads(backup_path.read_text(encoding="utf-8"))
+    assert backup["blocked_slots"] == [{"zone": 1, "layer": 1, "slot": 3}]
+
+    backup_count = len(list(config.backup_dir().glob("*.json")))
+    rejected = await client.post(
+        "/api/v1/system/restore",
+        json={"confirm": "错", "backup": backup},
+    )
+    assert rejected.status_code == 400
+    assert len(list(config.backup_dir().glob("*.json"))) == backup_count
+    assert (await client.get("/api/v1/components")).json() == []
+
+    current = await _create(client, slot=2, name="当前数据")
+
+    restored = await client.post(
+        "/api/v1/system/restore",
+        json={"confirm": "恢复", "backup": backup},
+    )
+    assert restored.status_code == 200, restored.text
+    result = restored.json()
+    assert result["components"] == 1
+    assert result["transactions"] == len(backup["transactions"])
+    assert result["blocked_slots"] == 1
+
+    rows = (await client.get("/api/v1/components")).json()
+    assert len(rows) == 1
+    assert rows[0]["id"] == component["id"]
+    assert rows[0]["manufacturer_part"] == "STM32F103C8T6"
+    assert rows[0]["supplier_part"] == "C82899"
+    assert rows[0]["slots"] == [{"zone": 1, "layer": 1, "slot": 1}]
+    layout = (await client.get("/api/v1/layout")).json()
+    assert layout["zone_names"] == ["主料区", "杂料区"]
+    assert layout["blocked"] == [{"zone": 1, "layer": 1, "slot": 3}]
+    transactions = (await client.get("/api/v1/transactions")).json()
+    assert len(transactions) == len(backup["transactions"]) + 1
+    assert transactions[0]["detail"].startswith("从备份恢复：")
+
+    current_backup = json.loads(
+        Path(result["backup_path"]).read_text(encoding="utf-8")
+    )
+    assert current_backup["reason"] == "restore"
+    assert current_backup["components"][0]["id"] == current["id"]
+    assert current_backup["components"][0]["name"] == "当前数据"
+
+
+async def test_restore_rejects_conflicting_backup_without_overwriting(client):
+    """备份中格子冲突时拒绝恢复，不影响当前数据。"""
+    current = await _create(client, slot=0, name="当前元件")
+    backup = {
+        "app": "ChipNest",
+        "components": [
+            {**current, "id": 10},
+            {**current, "id": 11},
+        ],
+        "transactions": [],
+        "blocked_slots": [],
+    }
+    backup_count = len(list(config.backup_dir().glob("*.json")))
+    response = await client.post(
+        "/api/v1/system/restore",
+        json={"confirm": "恢复", "backup": backup},
+    )
+    assert response.status_code == 422
+    assert len(list(config.backup_dir().glob("*.json"))) == backup_count
+    rows = (await client.get("/api/v1/components")).json()
+    assert len(rows) == 1 and rows[0]["id"] == current["id"]
+
+
 async def test_data_summary_drives_button_state(client):
     """概况接口：空库 empty=True，有数据后 False，清空后又回到 True。"""
     body = (await client.get("/api/v1/system/data-summary")).json()

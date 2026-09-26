@@ -161,6 +161,23 @@ export interface ResetResult {
   layout_reset: boolean
 }
 
+export interface BackupSnapshot {
+  app: 'ChipNest'
+  reason: string
+  exported_at: string
+  layout: Omit<LayoutConfig, 'blocked' | 'updated_at'> | null
+  components: ComponentItem[]
+  transactions: TransactionRow[]
+  blocked_slots: BlockedSlot[]
+}
+
+export interface RestoreResult {
+  components: number
+  transactions: number
+  blocked_slots: number
+  backup_path: string
+}
+
 // 联网识别候选（后端 /api/v1/lookup/*）
 export interface LookupCandidate {
   lcsc: string

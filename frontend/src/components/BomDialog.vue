@@ -91,13 +91,17 @@ async function onFile(ev: Event) {
   const input = ev.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
+  text.value = ''
+  parsed.value = null
+  plan.value = null
+  fileName.value = ''
   busy.value = true
   errorMsg.value = null
   try {
-    if (/\.xlsx?$/i.test(file.name)) {
+    if (/\.(xlsx|csv)$/i.test(file.name)) {
       parsed.value = await api.importBomFile(file)
     } else {
-      // txt/csv：按文本读入同一解析通道
+      // txt：按文本读入同一解析通道
       text.value = await file.text()
       parsed.value = await api.parseBom(text.value)
     }
@@ -117,12 +121,13 @@ async function runPlan() {
   busy.value = true
   errorMsg.value = null
   try {
-    // 文件导入时 text 为空 → 由解析结果重建同构文本再规划
-    const source = text.value.trim()
-      ? text.value
-      : (parsed.value?.lines ?? []).map((l) => l.raw).join('\n')
-    if (!source.trim()) { errorMsg.value = '没有 BOM 内容'; return }
-    plan.value = await api.planBom(source)
+    if (text.value.trim()) {
+      plan.value = await api.planBom(text.value)
+    } else if (parsed.value?.lines.length) {
+      plan.value = await api.planBomRows(parsed.value.lines)
+    } else {
+      errorMsg.value = '没有 BOM 内容'
+    }
   } catch (e) { errorMsg.value = errText(e) } finally { busy.value = false }
 }
 
@@ -296,7 +301,7 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                   <div class="flex flex-col gap-2">
                     <label class="btn !justify-start border-dashed" :class="{ '!border-[var(--accent)]': busy }">
                       <FileUp :size="15" /> {{ busy ? '解析中…' : '选择 BOM 文件' }}
-                      <input type="file" accept=".xlsx,.xls,.csv,.txt" class="hidden" @change="onFile" />
+                      <input type="file" accept=".xlsx,.csv,.txt" class="hidden" @change="onFile" />
                     </label>
                     <span v-if="fileName" class="chip mono !text-[10.5px]" style="color: var(--accent)">
                       ✓ {{ fileName }}

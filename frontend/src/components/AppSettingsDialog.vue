@@ -4,12 +4,14 @@ import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
 import {
-  DatabaseZap, Lamp, Link2, ListOrdered, Layers, MonitorCog, Moon, Palette, Sun,
+  DatabaseZap, FileUp, Lamp, Link2, ListOrdered, Layers, MonitorCog, Moon, Palette, Sun,
   Trash2, X,
 } from '@lucide/vue'
 
 import { api } from '../api/client'
-import type { DataSummary, MergeGroup, ResetResult } from '../api/types'
+import type {
+  BackupSnapshot, DataSummary, MergeGroup, ResetResult, RestoreResult,
+} from '../api/types'
 import { useConnectionStore } from '../stores/connection'
 import { useTheme } from '../stores/theme'
 
@@ -95,6 +97,16 @@ const canConfirm = computed(() => !busy.value && confirmText.value.trim() === CO
 const summary = ref<DataSummary | null>(null)
 const canWipe = computed(() => !!summary.value && !summary.value.empty)
 
+const backup = ref<BackupSnapshot | null>(null)
+const backupName = ref('')
+const restoreConfirming = ref(false)
+const restoreConfirmText = ref('')
+const restoreBusy = ref(false)
+const restoreError = ref<string | null>(null)
+const restored = ref<RestoreResult | null>(null)
+const canRestore = computed(() => !restoreBusy.value
+  && restoreConfirmText.value.trim() === '恢复')
+
 async function loadSummary() {
   try {
     summary.value = await api.dataSummary()
@@ -136,6 +148,66 @@ async function doReset() {
   }
 }
 
+async function onBackupFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  backup.value = null
+  backupName.value = ''
+  restoreConfirming.value = false
+  restoreConfirmText.value = ''
+  restoreError.value = null
+  restored.value = null
+  try {
+    const parsed: unknown = JSON.parse(await file.text())
+    if (!parsed || typeof parsed !== 'object'
+        || !('app' in parsed) || parsed.app !== 'ChipNest'
+        || !('components' in parsed) || !Array.isArray(parsed.components)
+        || !('transactions' in parsed) || !Array.isArray(parsed.transactions)) {
+      throw new Error('备份文件无效')
+    }
+    backup.value = parsed as BackupSnapshot
+    backupName.value = file.name
+  } catch {
+    restoreError.value = '备份文件无效'
+  }
+}
+
+function startRestoreConfirm() {
+  restoreConfirmText.value = ''
+  restoreError.value = null
+  restoreConfirming.value = true
+}
+
+function cancelRestore() {
+  restoreConfirming.value = false
+  restoreConfirmText.value = ''
+  restoreError.value = null
+}
+
+async function doRestore() {
+  if (!canRestore.value || !backup.value) return
+  restoreBusy.value = true
+  restoreError.value = null
+  try {
+    restored.value = await api.restoreData({
+      confirm: restoreConfirmText.value.trim(),
+      backup: backup.value,
+    })
+    backup.value = null
+    backupName.value = ''
+    restoreConfirming.value = false
+    restoreConfirmText.value = ''
+    await loadSummary()
+    emit('reset')
+  } catch (e) {
+    restoreError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    restoreBusy.value = false
+  }
+}
+
 // 打开时取一次概况（决定按钮能不能点）；关上则收起确认态与上次的结果提示
 watch(() => props.open, (open) => {
   if (open) {
@@ -146,6 +218,12 @@ watch(() => props.open, (open) => {
   confirmText.value = ''
   resetError.value = null
   wiped.value = null
+  backup.value = null
+  backupName.value = ''
+  restoreConfirming.value = false
+  restoreConfirmText.value = ''
+  restoreError.value = null
+  restored.value = null
 })
 </script>
 
@@ -336,6 +414,42 @@ watch(() => props.open, (open) => {
                       </div>
                     </div>
                   </template>
+
+                  <div class="mt-4 border-t pt-4" style="border-color: var(--line)">
+                    <div class="mb-2 text-[12.5px] font-bold">恢复备份</div>
+                    <label class="btn inline-flex cursor-pointer !py-1.5 text-xs"
+                           :class="restoreBusy ? 'pointer-events-none opacity-50' : ''">
+                      <FileUp :size="14" class="mr-1 inline" />选择 JSON 备份
+                      <input class="hidden" type="file" accept=".json,application/json"
+                             :disabled="restoreBusy" @change="onBackupFile" />
+                    </label>
+                    <div v-if="backup" class="mt-2 text-[11.5px]" style="color: var(--text-dim)">
+                      <div class="truncate">{{ backupName }}</div>
+                      <div class="mt-1">{{ backup.components.length }} 个元件 · {{ backup.transactions.length }} 条流水 · {{ backup.blocked_slots?.length ?? 0 }} 个停用格</div>
+                    </div>
+                    <div v-if="restored" class="mt-2 text-[11.5px]" style="color: var(--success)">
+                      已恢复 {{ restored.components }} 个元件、{{ restored.transactions }} 条流水
+                    </div>
+                    <div v-if="restored" class="mono mt-1 break-all text-[10.5px]"
+                         style="color: var(--text-faint)">{{ restored.backup_path }}</div>
+                    <div v-if="restoreError" class="mt-2 text-[11.5px] font-bold"
+                         style="color: var(--danger)">{{ restoreError }}</div>
+                    <div v-if="restoreConfirming" class="mt-3 rounded-xl p-3 text-[12px]"
+                         style="background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.34)">
+                      <div class="font-bold" style="color: var(--danger)">将覆盖当前数据</div>
+                      <div class="field-label mt-3">确认词</div>
+                      <input v-model="restoreConfirmText" class="input mt-1.5" placeholder="恢复"
+                             maxlength="4" @keyup.enter="doRestore" />
+                      <div class="mt-3 flex items-center gap-2">
+                        <button class="btn btn-danger" :disabled="!canRestore" @click="doRestore">
+                          {{ restoreBusy ? '正在恢复…' : '确认恢复' }}
+                        </button>
+                        <button class="btn btn-ghost" :disabled="restoreBusy" @click="cancelRestore">取消</button>
+                      </div>
+                    </div>
+                    <button v-else-if="backup" class="btn btn-danger mt-3 !py-1.5 text-xs"
+                            :disabled="restoreBusy" @click="startRestoreConfirm">恢复备份</button>
+                  </div>
                 </section>
               </div>
 

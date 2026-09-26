@@ -117,7 +117,7 @@ async def test_manager_serial_mode_drives_leds_by_stock_rules():
         assert mgr.status()["mode"] == "serial"
         ser = FakeSerial.instances[-1]
 
-        # 低于阈值 → 常亮红；补足后 → 熄灭；删除 → 熄灭；引导 → 橙
+        # 低于阈值 → 红；补足后 → 灭；引导切换/结束恢复库存灯态
         await mgr._sync_led(SimpleNamespace(led_index=4, quantity=1,
                                             threshold=5))
         assert ser.written[-1] == b"LED:4,255,0,0\n"
@@ -126,8 +126,19 @@ async def test_manager_serial_mode_drives_leds_by_stock_rules():
         assert ser.written[-1] == b"LED:4,0,0,0\n"
         await mgr._on_component_removed(SimpleNamespace(led_index=4))
         assert ser.written[-1] == b"LED:4,0,0,0\n"
-        await mgr.set_guide_led(4)
+        low_stock = SimpleNamespace(led_index=4, quantity=1, threshold=5)
+        await mgr.set_guide_led(low_stock)
         assert ser.written[-1] == b"LED:4,255,165,0\n"
+        await mgr.set_guide_led(None)
+        assert ser.written[-1] == b"LED:4,255,0,0\n"
+
+        enough_stock = SimpleNamespace(led_index=5, quantity=10, threshold=5)
+        await mgr.set_guide_led(low_stock)
+        await mgr.set_guide_led(enough_stock)
+        assert ser.written[-2] == b"LED:4,255,0,0\n"
+        assert ser.written[-1] == b"LED:5,255,165,0\n"
+        await mgr.set_guide_led(None)
+        assert ser.written[-1] == b"LED:5,0,0,0\n"
 
         # 无灯位元件不产生任何串口写
         before = len(ser.written)

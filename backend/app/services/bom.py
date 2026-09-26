@@ -18,9 +18,10 @@ Manufacturer Part/Supplier Part），把每行组装成一段 BOM 文本后走�
 解析器，保证文本与表格两种来源语义一致；料号随行保留供采购与识别。
 """
 
+import csv
 import re
 from dataclasses import dataclass
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Any, Optional
 
 from openpyxl import load_workbook
@@ -187,11 +188,29 @@ def norm_values_equal(left: str, right: str) -> bool:
 
 
 def _score_line(line: BomLine, comp: Any) -> int:
-    """元件与一行 BOM 的匹配分：封装 10 + 值等价 8 + 名称互相包含 6。
+    """按料号优先匹配，再按封装、值和名称打分。
 
     硬性剔除：封装都写明却不一致、或两边都能归一化但数值/家族不等
     —— 视为不同物料（11k 绝不能匹配 10k 的槽）。
     """
+    line_supplier = (line.supplier_part or "").strip().casefold()
+    comp_supplier = (getattr(comp, "supplier_part", None) or "").strip().casefold()
+    line_mpn = (line.manufacturer_part or "").strip().casefold()
+    comp_mpn = (getattr(comp, "manufacturer_part", None) or "").strip().casefold()
+    supplier_match = bool(line_supplier and comp_supplier
+                          and line_supplier == comp_supplier)
+    mpn_match = bool(line_mpn and comp_mpn and line_mpn == comp_mpn)
+
+    supplier_conflict = (
+        line_supplier and comp_supplier and not supplier_match and not mpn_match
+    )
+    mpn_conflict = line_mpn and comp_mpn and not mpn_match and not supplier_match
+    if supplier_conflict or mpn_conflict:
+        return 0
+
+    if supplier_match or mpn_match:
+        return (1000 if supplier_match else 0) + (500 if mpn_match else 0)
+
     score = 0
     lp, cp = line.package, comp.package
     if lp and cp:
@@ -387,19 +406,19 @@ def _family_cn(value: Optional[str]) -> str:
 
 
 def _compose_row(row: list[Any], mapping: dict) -> Optional[BomLine]:
-    """按表头映射把一行 Excel 组装成一行 BOM 文本并用通用解析器解析。"""
-    name = _cell_text(row[mapping["name"]]) if mapping.get("name") is not None else ""
-    value = _cell_text(row[mapping["value"]]) if mapping.get("value") is not None else ""
-    fp = _cell_text(row[mapping["footprint"]]) if mapping.get("footprint") is not None else ""
-    raw_qty = ""
-    if mapping.get("quantity") is not None:
-        raw_qty = _cell_text(row[mapping["quantity"]])
-    mpn = ""
-    if mapping.get("manufacturer_part") is not None:
-        mpn = _cell_text(row[mapping["manufacturer_part"]])
-    supplier = ""
-    if mapping.get("supplier_part") is not None:
-        supplier = _cell_text(row[mapping["supplier_part"]])
+    """按表头映射组装 BOM 行，并用通用解析器解析。"""
+    def cell(key: str) -> str:
+        index = mapping.get(key)
+        if index is None or index >= len(row):
+            return ""
+        return _cell_text(row[index])
+
+    name = cell("name")
+    value = cell("value")
+    fp = cell("footprint")
+    raw_qty = cell("quantity")
+    mpn = cell("manufacturer_part")
+    supplier = cell("supplier_part")
 
     if not name and not value and not fp and not raw_qty and not mpn:
         return None
@@ -429,9 +448,9 @@ def _compose_row(row: list[Any], mapping: dict) -> Optional[BomLine]:
     return line
 
 
-def _find_header(rows: list[list[Any]]) -> Optional[dict]:
-    """在前几行找表头并返回 {逻辑列: 列下标}；找不到返回 None。"""
-    for row in rows[:6]:
+def _find_header(rows: list[list[Any]]) -> Optional[tuple[int, dict]]:
+    """在前几行找表头并返回行号与 {逻辑列: 列下标}。"""
+    for row_index, row in enumerate(rows[:6]):
         if not row:
             continue
         cells = [_cell_text(c).lower() for c in row]
@@ -443,8 +462,41 @@ def _find_header(rows: list[list[Any]]) -> Optional[dict]:
                     break
         # 至少要有名称类 + 数量/封装之一，才算表头
         if "name" in mapping and ("quantity" in mapping or "footprint" in mapping):
-            return mapping
+            return row_index, mapping
     return None
+
+
+def _parse_table_rows(rows: list[list[Any]]) -> list[BomLine]:
+    """解析带表头的二维行数据，供 xlsx 和 CSV 共用。"""
+    header = _find_header(rows)
+    if header is None:
+        raise ValueError("未识别到表头（需要包含 名称/数量 或 名称/封装 的列）")
+    header_index, mapping = header
+
+    lines: list[BomLine] = []
+    for row in rows[header_index + 1:]:
+        if not any(_cell_text(cell) for cell in row):
+            continue
+        line = _compose_row(row, mapping)
+        if line is not None:
+            lines.append(line)
+    return lines
+
+
+def parse_csv_bytes(data: bytes) -> list[BomLine]:
+    """解析 UTF-8 或 GB18030 编码的 BOM CSV 表格。"""
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("gb18030")
+
+    try:
+        dialect = csv.Sniffer().sniff(text[:2048], delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+
+    rows = list(csv.reader(StringIO(text), dialect))
+    return _parse_table_rows(rows)
 
 
 def parse_excel_bytes(data: bytes) -> list[BomLine]:
@@ -460,15 +512,4 @@ def parse_excel_bytes(data: bytes) -> list[BomLine]:
     finally:
         workbook.close()
 
-    mapping = _find_header(rows)
-    if mapping is None:
-        raise ValueError("未识别到表头（需要包含 名称/数量 或 名称/封装 的列）")
-
-    lines: list[BomLine] = []
-    for row in rows[1:]:  # 跳过表头行
-        if not any(_cell_text(c) for c in row):
-            continue
-        line = _compose_row(row, mapping)
-        if line is not None:
-            lines.append(line)
-    return lines
+    return _parse_table_rows(rows)
