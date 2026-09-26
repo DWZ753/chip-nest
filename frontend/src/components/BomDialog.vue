@@ -15,7 +15,7 @@ import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; start: [BomStep[]] }>()
+const emit = defineEmits<{ close: []; manual: []; start: [BomStep[]] }>()
 
 const bins = useBinsStore()
 
@@ -289,8 +289,11 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
                            leave="duration-150 ease-in" leave-to="opacity-0 translate-y-3 scale-95">
             <DialogPanel class="glass-strong flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl p-5">
               <div class="mb-3 flex items-center gap-2.5">
-                <DialogTitle class="text-base font-extrabold tracking-wide">BOM 导入</DialogTitle>
-                <button class="icon-btn ml-auto !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
+                <DialogTitle class="text-base font-extrabold tracking-wide">库存</DialogTitle>
+                <button class="btn ml-auto !px-3 !py-1.5 text-xs" @click="emit('manual')">
+                  <ListPlus :size="14" /> 手工入库
+                </button>
+                <button class="icon-btn !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
               </div>
 
               <!-- ========== 工作区：粘贴文本 / xlsx 文件 ========== -->

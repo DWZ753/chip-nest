@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  Boxes, ChevronDown, ChevronUp, ClipboardList, LayoutGrid, Moon, Search,
+  ChevronDown, ChevronUp, ClipboardList, LayoutGrid, Moon, Search,
   Settings, Sun,
 } from '@lucide/vue'
 
@@ -32,12 +32,7 @@ function onSearchEnter(event: KeyboardEvent) {
   >
     <!-- Logo -->
     <div class="flex items-center gap-2.5 pr-1">
-      <div
-        class="grid h-9 w-9 place-items-center rounded-xl text-white shadow-lg"
-        style="background: linear-gradient(135deg, var(--accent-strong), var(--warm))"
-      >
-        <Boxes :size="19" stroke-width="2.2" />
-      </div>
+      <img src="/icon-192.png" alt="ChipNest" class="h-9 w-9 rounded-xl shadow-lg" />
       <div class="hidden leading-tight md:block">
         <div class="title-gradient text-[15px] font-extrabold tracking-wide">
           ChipNest
@@ -130,7 +125,7 @@ function onSearchEnter(event: KeyboardEvent) {
       </button>
       <button
         class="icon-btn"
-        title="BOM 导入"
+        title="库存"
         @click="emit('openBom')"
       >
         <ClipboardList :size="18" />

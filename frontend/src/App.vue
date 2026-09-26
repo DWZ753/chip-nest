@@ -57,7 +57,7 @@ function startGuide(steps: BomStep[]) {
 }
 
 function openManual() {
-  layoutOpen.value = false
+  bomOpen.value = false
   manualOpen.value = true
 }
 
@@ -108,11 +108,15 @@ async function retry() {
       :layout="bins.layout"
       @close="editOpen = false"
     />
-    <BomDialog :open="bomOpen" @close="bomOpen = false" @start="startGuide" />
+    <BomDialog
+      :open="bomOpen"
+      @close="bomOpen = false"
+      @manual="openManual"
+      @start="startGuide"
+    />
     <LayoutDialog
       :open="layoutOpen"
       @close="layoutOpen = false"
-      @manual="openManual"
     />
     <ManualStockDialog :open="manualOpen" @close="manualOpen = false" />
     <AppSettingsDialog
