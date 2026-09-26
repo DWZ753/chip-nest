@@ -4,6 +4,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app import config
+from app.services.search import sql_search_match
 
 engine = create_async_engine(config.db_url(), echo=False)
 
@@ -16,6 +17,9 @@ def _sqlite_pragmas(dbapi_conn, _record):
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
+    dbapi_conn.create_function(
+        "chipnest_search_match", 8, sql_search_match, deterministic=True,
+    )
 
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

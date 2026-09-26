@@ -1,7 +1,7 @@
 // 轻量 fetch 封装：统一 JSON、错误提取（含后端 409 {message, available} 语义）
 import type {
   AdapterStatus, BackupSnapshot, BlockedSlot, BomLineOut, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
-  LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, RestoreResult, SwapOut,
+  LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, RestoreResult, SearchIds, SwapOut,
   TransactionRow, UndoOut, UndoPeek,
 } from './types'
 
@@ -79,6 +79,9 @@ export const api = {
     match_case?: boolean; whole_word?: boolean; use_regex?: boolean
   } = {}) =>
     request<ComponentItem[]>('/api/v1/components' + qs(opts)),
+  searchComponents: (opts: {
+    q: string; match_case?: boolean; whole_word?: boolean; use_regex?: boolean
+  }) => request<SearchIds>('/api/v1/components/search' + qs(opts)),
   createComponent: (payload: Record<string, unknown>) =>
     request<ComponentItem>('/api/v1/components', { method: 'POST', body: JSON.stringify(payload) }),
   patchComponent: (id: number, patch: Record<string, unknown>) =>

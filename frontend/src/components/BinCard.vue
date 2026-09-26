@@ -23,6 +23,8 @@ const props = defineProps<{
   rowSpan?: number
   /** 检索时没命中的卡片：变暗但仍留在格子里 */
   dimmed?: boolean
+  /** 搜索导航当前定位的元件 */
+  current?: boolean
   /** 共用卡：这一格是某个物料的附加占用格 */
   shared?: boolean
 }>()
@@ -204,12 +206,14 @@ const title = computed(() => {
   <div
     ref="rootEl"
     class="bin-card group"
+    :data-component-id="comp.id"
     :class="{ 'search-hit': flashing, 'guide-now': guide,
               'card-selected': selected,
               'has-supplier': showSupplier && !!comp.supplier_part,
               'card-picked': picked,
               'card-shared': shared,
               'card-dimmed': dimmed,
+              'search-current': current,
               'swap-ready': swapReady && !picked }"
     :style="gridStyle"
     :title="title"

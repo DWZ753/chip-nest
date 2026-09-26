@@ -7,10 +7,9 @@
 
 import json
 import re
+from functools import lru_cache
 
 from pypinyin import lazy_pinyin
-
-from app.models import Component
 
 # 汉字区间：首字母只对汉字计算，避免 pypinyin 吞掉/曲解 ASCII 片段
 _HANZI = re.compile(r"[一-鿿]+")
@@ -29,21 +28,32 @@ def build_search_text(name: str, value: str = "", package: str = "",
     return f"{raw} {_name_initials(name)}".strip()
 
 
-def component_search_fields(component: Component) -> list[str]:
-    """搜索选项启用时，保留每个字段的原始大小写和边界。"""
+@lru_cache(maxsize=128)
+def _cached_pattern(expression: str, flags: int) -> re.Pattern[str]:
+    """复用数据库逐行匹配所需的正则对象。"""
+    return re.compile(expression, flags)
+
+
+def sql_search_match(
+    expression: str, flags: int, name: str, value: str | None,
+    package: str | None, mpn: str | None, supplier_part: str | None,
+    tags_text: str | None,
+) -> int:
+    """SQLite 自定义函数：按原始字段匹配，返回 0 或 1。"""
+    pattern = _cached_pattern(expression, flags)
+    for field in (name, value, package, mpn, supplier_part):
+        if field and pattern.search(field):
+            return 1
+
     try:
-        tags = json.loads(component.tags or "[]")
+        tags = json.loads(tags_text or "[]")
     except (TypeError, ValueError):
         tags = []
-    if not isinstance(tags, list):
-        tags = []
-
-    fields = [
-        component.name, component.value, component.package,
-        component.manufacturer_part, component.supplier_part,
-        *(str(tag) for tag in tags), _name_initials(component.name),
-    ]
-    return [field for field in fields if field]
+    if isinstance(tags, list):
+        for tag in tags:
+            if pattern.search(str(tag)):
+                return 1
+    return int(bool(pattern.search(_name_initials(name))))
 
 
 def compile_search_pattern(

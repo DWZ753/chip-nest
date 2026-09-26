@@ -47,6 +47,11 @@ export const useBinsStore = defineStore('bins', () => {
   const searchError = ref<string | null>(null)
   // 检索命中的元件 id（null=没有检索）：命中的高亮，没命中的在网格里变暗但**不消失**
   const matchedIds = ref<Set<number> | null>(null)
+  const searchHitIds = ref<number[]>([])
+  const currentSearchIndex = ref(-1)
+  const searchNavigationTick = ref(0)
+  const currentSearchId = computed(() =>
+    searchHitIds.value[currentSearchIndex.value] ?? null)
   // 检索命中闪烁集合（key -> 无需时间戳，1.6s 后清除使动画结束）
   const flashKeys = ref<Record<string, true>>({})
   // 当前布局下所有空位（按 区→层→格 顺序；供购买清单逐项放置用）
@@ -173,24 +178,32 @@ export const useBinsStore = defineStore('bins', () => {
     const q = query.value.trim()
     if (!q) {
       matchedIds.value = null
+      searchHitIds.value = []
+      currentSearchIndex.value = -1
       searchError.value = null
       return
     }
     try {
       const options = searchOptions.value
-      const hits = await loadAllComponents({
+      const hits = await api.searchComponents({
         q,
         match_case: options.matchCase,
         whole_word: options.wholeWord,
         use_regex: options.useRegex,
       })
       if (revision !== queryRevision) return
-      matchedIds.value = new Set(hits.map((c) => c.id))
+      const hitSet = new Set(hits.ids)
+      matchedIds.value = hitSet
+      searchHitIds.value = hits.ids
+      currentSearchIndex.value = -1
       searchError.value = null
-      addFlash(hits.map(positionKey), JSON.stringify([q, options]))
+      addFlash(components.value.filter((c) => hitSet.has(c.id))
+        .map(positionKey), JSON.stringify([q, options]))
     } catch (e) {
       if (revision !== queryRevision) return
       matchedIds.value = null
+      searchHitIds.value = []
+      currentSearchIndex.value = -1
       searchError.value = e instanceof ApiError && e.status === 422
         ? '正则表达式无效' : '搜索失败'
     }
@@ -225,13 +238,27 @@ export const useBinsStore = defineStore('bins', () => {
     scheduleQuery()
   }
 
+  function navigateSearch(direction: -1 | 1) {
+    const count = searchHitIds.value.length
+    if (!count) return
+    if (currentSearchIndex.value < 0) {
+      currentSearchIndex.value = direction > 0 ? 0 : count - 1
+      searchNavigationTick.value++
+      return
+    }
+    currentSearchIndex.value = (currentSearchIndex.value + direction + count) % count
+    searchNavigationTick.value++
+  }
+
   function scheduleQuery() {
     queryRevision++
     searchError.value = null
+    matchedIds.value = null
+    searchHitIds.value = []
+    currentSearchIndex.value = -1
     window.clearTimeout(queryTimer)
     if (!query.value.trim()) {
       lastFlashQuery = ''
-      matchedIds.value = null
       return
     }
     queryTimer = window.setTimeout(() => {
@@ -365,6 +392,8 @@ export const useBinsStore = defineStore('bins', () => {
     searchError.value = null
     lastFlashQuery = ''
     matchedIds.value = null
+    searchHitIds.value = []
+    currentSearchIndex.value = -1
     window.clearTimeout(queryTimer)
     flashKeys.value = {}
     guideKey.value = null
@@ -384,9 +413,12 @@ export const useBinsStore = defineStore('bins', () => {
 
   return {
     layout, components, loading, error, query, searchOptions, searchError,
-    matchedIds, flashKeys, guideKey,
+    matchedIds, searchHitIds, currentSearchIndex, currentSearchId,
+    searchNavigationTick,
+    flashKeys, guideKey,
     compsByKey, orphanComps,
     refreshLayout, refreshComponents, refreshAll, setQuery, toggleSearchOption,
+    navigateSearch,
     freeSlots, upsert,
     updateZoneName,
     moveComponent, swapComponents, addSlot, removeSlot, blockAt, unblockAt, undoLast,

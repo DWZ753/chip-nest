@@ -15,9 +15,36 @@ from app import schemas
 from app.db import get_session
 from app.models import Component
 from app.services import stock as stock_service
-from app.services.search import compile_search_pattern, component_search_fields
+from app.services.search import compile_search_pattern
 
 router = APIRouter(prefix="/api/v1/components", tags=["components"])
+
+
+def _apply_search(stmt, query: str, match_case: bool, whole_word: bool,
+                  use_regex: bool):
+    """为元件列表与 ID 搜索共用同一套匹配规则。"""
+    if match_case or whole_word or use_regex:
+        try:
+            pattern = compile_search_pattern(
+                query, match_case, whole_word, use_regex,
+            )
+        except re.error as exc:
+            raise HTTPException(
+                status_code=422, detail="正则表达式无效"
+            ) from exc
+        return stmt.where(func.chipnest_search_match(
+            pattern.pattern, pattern.flags, Component.name,
+            Component.value, Component.package, Component.manufacturer_part,
+            Component.supplier_part, Component.tags,
+        ) == 1)
+
+    lowered = query.lower()
+    return stmt.where(or_(
+        Component.search_text.contains(lowered, autoescape=True),
+        func.lower(Component.supplier_part).contains(
+            lowered, autoescape=True,
+        ),
+    ))
 
 
 async def _get_component(session: AsyncSession, component_id: int) -> Component:
@@ -59,34 +86,32 @@ async def list_components(
     if layer is not None:
         stmt = stmt.where(Component.layer == layer)
     if q and q.strip():
-        query = q.strip()
-        if match_case or whole_word or use_regex:
-            try:
-                pattern = compile_search_pattern(
-                    query, match_case, whole_word, use_regex,
-                )
-            except re.error as exc:
-                raise HTTPException(
-                    status_code=422, detail="正则表达式无效"
-                ) from exc
-            rows = (await session.scalars(stmt)).all()
-            matches = [
-                component for component in rows
-                if any(pattern.search(field) for field in
-                       component_search_fields(component))
-            ]
-            return matches[offset:offset + limit]
-
-        lowered = query.lower()
-        stmt = stmt.where(or_(
-            Component.search_text.contains(lowered, autoescape=True),
-            func.lower(Component.supplier_part).contains(
-                lowered, autoescape=True,
-            ),
-        ))
+        stmt = _apply_search(
+            stmt, q.strip(), match_case, whole_word, use_regex,
+        )
     stmt = stmt.limit(limit).offset(offset)
     rows = (await session.scalars(stmt)).all()
     return list(rows)
+
+
+@router.get("/search", response_model=schemas.SearchIdsOut)
+async def search_component_ids(
+    q: str = Query(min_length=1, max_length=64),
+    match_case: bool = False,
+    whole_word: bool = False,
+    use_regex: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> schemas.SearchIdsOut:
+    """只返回有序命中 ID，供网格标记和逐项定位。"""
+    query = q.strip()
+    if not query:
+        return schemas.SearchIdsOut(ids=[])
+    stmt = select(Component.id).order_by(
+        Component.zone, Component.layer, Component.slot,
+    )
+    stmt = _apply_search(stmt, query, match_case, whole_word, use_regex)
+    ids = (await session.scalars(stmt)).all()
+    return schemas.SearchIdsOut(ids=list(ids))
 
 
 @router.post("", response_model=schemas.ComponentOut, status_code=201)

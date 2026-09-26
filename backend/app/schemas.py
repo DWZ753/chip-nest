@@ -265,6 +265,12 @@ class ComponentOut(BaseModel):
         return value or []
 
 
+class SearchIdsOut(BaseModel):
+    """按仓库位置排序的搜索命中元件 ID。"""
+
+    ids: list[int]
+
+
 class StockChange(BaseModel):
     delta: int = Field(..., description="正数入库，负数出库")  # 0 由业务层拒绝
     note: Optional[str] = Field(default=None, max_length=200)

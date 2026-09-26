@@ -39,6 +39,10 @@ export interface ComponentItem {
   slot_count: number
 }
 
+export interface SearchIds {
+  ids: number[]
+}
+
 // 一个元件的附加占用格（主格是 zone/layer/slot）
 export interface SlotRef {
   zone: number

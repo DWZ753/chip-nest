@@ -33,6 +33,13 @@ async def test_search_matrix(client):
     assert await _names(client, "zsd") == ["LED指示灯"]          # 指示灯 = zsd
     assert await _names(client, "不存在的料") == []
 
+    result = await client.get(
+        "/api/v1/components/search",
+        params={"q": "dz", "match_case": True},
+    )
+    assert result.status_code == 200
+    assert len(result.json()["ids"]) == 1
+
 
 async def test_filter_by_zone_and_layer(client):
     await _seed(client)
@@ -70,6 +77,14 @@ async def test_search_options_and_filtered_pagination(client):
         assert response.status_code == 200, response.text
         return [row["slot"] for row in response.json()]
 
+    async def search_ids(**params):
+        response = await client.get("/api/v1/components/search", params=params)
+        assert response.status_code == 200, response.text
+        return response.json()["ids"]
+
+    all_rows = (await client.get("/api/v1/components")).json()
+    ids = {row["slot"]: row["id"] for row in all_rows}
+
     assert await slots(q="47") == [0, 1]
     assert await slots(q="47", whole_word=True) == [0]
     assert await slots(q="47", whole_word=True, offset=1) == []
@@ -81,9 +96,21 @@ async def test_search_options_and_filtered_pagination(client):
     assert await slots(q="led", match_case=False, whole_word=True) == [2]
     assert await slots(q="C14663") == [2]
     assert await slots(q="C14663", whole_word=True) == [2]
+    assert await search_ids(q="47") == [ids[0], ids[1]]
+    assert await search_ids(q="47", whole_word=True) == [ids[0]]
+    assert await search_ids(q="^47$", use_regex=True) == [ids[0]]
+    assert await search_ids(q="led", match_case=True) == []
+    assert await search_ids(q="LED", match_case=True) == [ids[2]]
+    assert await search_ids(q="C14663") == [ids[2]]
+    assert await search_ids(q=" ") == []
 
     response = await client.get(
         "/api/v1/components", params={"q": "[", "use_regex": True},
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "正则表达式无效"
+
+    response = await client.get(
+        "/api/v1/components/search", params={"q": "[", "use_regex": True},
+    )
+    assert response.status_code == 422

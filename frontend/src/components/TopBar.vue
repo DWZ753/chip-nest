@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { Boxes, ClipboardList, LayoutGrid, Moon, Search, Settings, Sun } from '@lucide/vue'
+import {
+  Boxes, ChevronDown, ChevronUp, ClipboardList, LayoutGrid, Moon, Search,
+  Settings, Sun,
+} from '@lucide/vue'
 
 import { useBinsStore } from '../stores/bins'
 import { useTheme } from '../stores/theme'
@@ -16,6 +19,11 @@ const bins = useBinsStore()
 const connection = useConnectionStore()
 const { dark, toggle } = useTheme()
 // dark=true ⇔ 当前深色（默认）
+
+function onSearchEnter(event: KeyboardEvent) {
+  event.preventDefault()
+  bins.navigateSearch(event.shiftKey ? -1 : 1)
+}
 </script>
 
 <template>
@@ -56,6 +64,7 @@ const { dark, toggle } = useTheme()
         type="search"
         :aria-invalid="!!bins.searchError"
         @input="bins.setQuery(($event.target as HTMLInputElement).value)"
+        @keydown.enter="onSearchEnter"
       />
       <div class="absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
         <button
@@ -89,6 +98,24 @@ const { dark, toggle } = useTheme()
       <div v-if="bins.searchError" class="absolute left-4 top-full mt-1 rounded-lg px-2 py-1 text-xs"
            style="color: var(--danger); background: var(--panel); border: 1px solid var(--danger)"
            role="status">{{ bins.searchError }}</div>
+      <div v-if="bins.matchedIds !== null"
+           class="absolute right-0 top-full mt-1 flex items-center gap-1 rounded-xl px-2 py-1 shadow-lg"
+           style="background: var(--panel); border: 1px solid var(--line-strong)">
+        <span class="mono mr-1 text-[11px]" style="color: var(--text-dim)" aria-live="polite">
+          {{ bins.searchHitIds.length }} 个匹配
+          <template v-if="bins.currentSearchIndex >= 0">
+            · {{ bins.currentSearchIndex + 1 }}/{{ bins.searchHitIds.length }}
+          </template>
+        </span>
+        <button type="button" class="icon-btn !h-6 !w-6 !rounded-md disabled:opacity-40"
+                title="上一个匹配" aria-label="上一个匹配"
+                :disabled="bins.searchHitIds.length === 0"
+                @click="bins.navigateSearch(-1)"><ChevronUp :size="15" /></button>
+        <button type="button" class="icon-btn !h-6 !w-6 !rounded-md disabled:opacity-40"
+                title="下一个匹配" aria-label="下一个匹配"
+                :disabled="bins.searchHitIds.length === 0"
+                @click="bins.navigateSearch(1)"><ChevronDown :size="15" /></button>
+      </div>
     </div>
 
     <!-- 右侧操作 -->

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   Ban, Check, Combine, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X,
 } from '@lucide/vue'
@@ -17,6 +17,8 @@ const emit = defineEmits<{
   edit: [ComponentItem]
   create: [BinPosition]
 }>()
+
+const rootEl = ref<HTMLElement | null>(null)
 
 // ---------- 批量选择模式 ----------
 const batchMode = ref(false)
@@ -159,6 +161,16 @@ async function deleteSelected() {
 const bins = useBinsStore()
 const picker = usePickerStore()
 const { mergeSlots: mergeView } = useTheme()
+
+watch(() => bins.searchNavigationTick, async () => {
+  await nextTick()
+  const id = bins.currentSearchId
+  if (id === null) return
+  const target = rootEl.value?.querySelector<HTMLElement>(
+    `[data-component-id="${id}"]`,
+  ) ?? rootEl.value?.querySelector<HTMLElement>('[data-orphan-warning]')
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+})
 
 // ---------- 移动模式：点按拿起 → 点空格放下 ----------
 const moveMode = ref(false)
@@ -515,7 +527,7 @@ async function fixOrphans() {
 </script>
 
 <template>
-  <div class="fade-up mx-auto flex w-[min(1400px,calc(100%-24px))] flex-col gap-4 pb-16">
+  <div ref="rootEl" class="fade-up mx-auto flex w-[min(1400px,calc(100%-24px))] flex-col gap-4 pb-16">
     <!-- 批量操作条 -->
     <div class="flex items-center justify-end gap-2">
       <template v-if="batchMode">
@@ -630,6 +642,7 @@ async function fixOrphans() {
     <!-- 游离元件提示：布局缩容后超出网格 -->
     <div
       v-if="bins.orphanComps.length > 0"
+      data-orphan-warning
       class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3"
       style="border-color: color-mix(in srgb, var(--warn) 55%, var(--line))"
     >
@@ -713,6 +726,7 @@ async function fixOrphans() {
                 :row-span="cell.rowSpan"
                 :shared="cell.kind === 'shared'"
                 :dimmed="!!bins.matchedIds && !bins.matchedIds.has(cell.comp!.id)"
+                :current="bins.currentSearchId === cell.comp!.id"
                 :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
                 :guide="bins.guideKey === positionKey(cell.pos)"
                 :selectable="batchMode"
