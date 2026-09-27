@@ -3,11 +3,11 @@
 # ChipNest · 智能元件管家
 
 ChipNest 用货架网格管理电子元件的位置、库存和取料流程。
-当前正式版为 **v1.6.0**，提供 Windows 安装包，安装后无需配置 Python。
+当前正式版为 **v1.6.1**，提供 Windows 安装包，安装后无需配置 Python。
 没有 ESP32 硬件时，软件会显示「模拟」状态，库存管理功能照常使用。
 
 [下载安装包](https://github.com/DWZ753/chip-nest/releases/latest) ·
-[查看 v1.6.0 更新](docs/release-notes-v1.6.0.md) ·
+[查看 v1.6.1 更新](docs/release-notes-v1.6.1.md) ·
 [反馈问题](https://github.com/DWZ753/chip-nest/issues)
 
 ![v1.5.0 仓库主界面](docs/screenshots/main-v1.5.0.jpg)
@@ -15,7 +15,7 @@ ChipNest 用货架网格管理电子元件的位置、库存和取料流程。
 ## 安装与升级
 
 1. 从 [Releases](https://github.com/DWZ753/chip-nest/releases/latest)
-   下载 `ChipNest-Setup-1.6.0.exe`。
+   下载 `ChipNest-Setup-1.6.1.exe`。
 2. 升级前关闭正在运行的 `ChipNest.exe`，再运行安装程序。
 3. 启动后在左上角或「设置 → 版本」核对版本号。
 
@@ -52,8 +52,8 @@ ChipNest 用货架网格管理电子元件的位置、库存和取料流程。
 - **次版本**：增加功能或兼容的数据结构。
 - **修订版本**：修复问题，以及文案和打包调整。
 
-当前版本 `1.6.0` 表示第 1 个主版本系列、第 6 次功能更新，
-目前没有额外的修订号。
+当前版本 `1.6.1` 表示第 1 个主版本系列、第 6 次功能更新、
+第 1 次修订。
 
 ### 搜索与定位
 
