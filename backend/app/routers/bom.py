@@ -68,11 +68,12 @@ async def plan_bom_rows(
 ) -> schemas.BomPlanOut:
     """按结构化 BOM 行规划，料号字段参与精确匹配。"""
     lines = [bom_service.BomLine(**line.model_dump()) for line in body.lines]
-    return await _build_plan(lines, session)
+    return await _build_plan(lines, session, body.selections)
 
 
 async def _build_plan(
-    lines: list[bom_service.BomLine], session: AsyncSession
+    lines: list[bom_service.BomLine], session: AsyncSession,
+    selections: dict[int, int] | None = None,
 ) -> schemas.BomPlanOut:
     """把 BOM 行和库存合并成取料步骤与缺料清单。"""
     if not lines:
@@ -81,7 +82,10 @@ async def _build_plan(
     comps = list((await session.scalars(
         select(Component).order_by(Component.zone, Component.layer, Component.slot)
     )).all())
-    plan = bom_service.plan_pure(lines, comps)
+    try:
+        plan = bom_service.plan_pure(lines, comps, selections)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     steps = [
         schemas.BomStepOut(
@@ -92,9 +96,19 @@ async def _build_plan(
         for step in plan["steps"]
     ]
     missing = [schemas.BomMissingOut(**item) for item in plan["missing"]]
+    choices = [
+        schemas.BomChoiceOut(
+            line_index=choice["line_index"], line=choice["line"],
+            candidates=[schemas.BomCandidateOut(
+                component=schemas.ComponentOut.model_validate(
+                    candidate["component"],
+                ), reasons=candidate["reasons"],
+            ) for candidate in choice["candidates"]],
+        ) for choice in plan["choices"]
+    ]
     return schemas.BomPlanOut(
-        steps=steps, missing=missing,
-        requested=plan["requested"], complete=not missing,
+        steps=steps, missing=missing, choices=choices,
+        requested=plan["requested"], complete=not missing and not choices,
     )
 
 

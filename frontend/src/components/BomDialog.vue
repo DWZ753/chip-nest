@@ -24,6 +24,7 @@ const text = ref('')
 const fileName = ref('')
 const parsed = ref<BomParseOut | null>(null)
 const plan = ref<BomPlan | null>(null)
+const selections = ref<Record<number, number>>({})
 const busy = ref(false)
 const errorMsg = ref<string | null>(null)
 const view = ref<'work' | 'import'>('work')
@@ -43,6 +44,13 @@ interface RowEdit {
 const rows = ref<RowEdit[]>([])
 const freeOptions = ref<BinPosition[]>([])
 const doneCount = ref(0)
+
+watch(text, () => {
+  parsed.value = null
+  plan.value = null
+  selections.value = {}
+  fileName.value = ''
+})
 
 watch(
   () => props.open,
@@ -80,6 +88,8 @@ async function runParse() {
   if (!text.value.trim()) { errorMsg.value = '没有 BOM 内容'; return }
   busy.value = true
   errorMsg.value = null
+  parsed.value = null
+  plan.value = null
   try {
     parsed.value = await api.parseBom(text.value)
     plan.value = null
@@ -118,17 +128,32 @@ async function onFile(ev: Event) {
 }
 
 async function runPlan() {
+  selections.value = {}
+  await updatePlan()
+}
+
+async function chooseCandidate(line_index: number, component_id: number) {
+  if (busy.value) return
+  const previous = selections.value[line_index]
+  selections.value[line_index] = component_id
+  if (!await updatePlan()) {
+    if (previous === undefined) delete selections.value[line_index]
+    else selections.value[line_index] = previous
+  }
+}
+
+async function updatePlan(): Promise<boolean> {
   busy.value = true
   errorMsg.value = null
   try {
-    if (text.value.trim()) {
-      plan.value = await api.planBom(text.value)
-    } else if (parsed.value?.lines.length) {
-      plan.value = await api.planBomRows(parsed.value.lines)
+    if (parsed.value?.lines.length) {
+      plan.value = await api.planBomRows(parsed.value.lines, selections.value)
+      return true
     } else {
       errorMsg.value = '没有 BOM 内容'
     }
   } catch (e) { errorMsg.value = errText(e) } finally { busy.value = false }
+  return false
 }
 
 // ---------- 整表入库（购买清单） ----------
@@ -270,7 +295,8 @@ async function importAll() {
   await bins.refreshAll()
 }
 
-const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
+const canStart = computed(() => !busy.value && !!plan.value
+  && plan.value.steps.length > 0 && plan.value.choices.length === 0)
 </script>
 
 <template>
@@ -363,6 +389,54 @@ const canStart = computed(() => !!plan.value && plan.value.steps.length > 0)
 
                 <!-- 规划结果 -->
                 <template v-if="plan">
+                  <div v-if="plan.choices.length" class="fade-up rounded-xl px-4 py-3"
+                       style="border: 1px solid var(--line-strong); background: var(--panel)">
+                    <div class="mb-2 text-[13px] font-extrabold" style="color: var(--warn)">
+                      待确认（{{ plan.choices.length }} 项）
+                    </div>
+                    <div v-for="choice in plan.choices" :key="choice.line_index"
+                         class="mb-3 last:mb-0">
+                      <div class="mb-1.5 flex flex-wrap items-center gap-2 text-[12.5px]">
+                        <span class="chip">第 {{ choice.line_index + 1 }} 行</span>
+                        <span class="font-bold">{{ choice.line.name || choice.line.raw }}</span>
+                        <span class="mono">{{ choice.line.value }} {{ choice.line.package }}</span>
+                        <span class="num">×{{ choice.line.quantity }}</span>
+                      </div>
+                      <div v-if="choice.line.manufacturer_part || choice.line.supplier_part"
+                           class="mb-1.5 break-all text-[11px]" style="color: var(--text-dim)">
+                        厂商料号 {{ choice.line.manufacturer_part || '—' }} ·
+                        供应商料号 {{ choice.line.supplier_part || '—' }}
+                      </div>
+                      <div class="flex flex-col gap-1.5">
+                        <button v-for="candidate in choice.candidates" :key="candidate.component.id"
+                                class="btn !justify-start !whitespace-normal text-left"
+                                :disabled="busy"
+                                @click="chooseCandidate(choice.line_index, candidate.component.id)">
+                          <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-2 text-[12px]">
+                              <span class="font-bold">{{ candidate.component.name }}</span>
+                              <span class="mono">{{ candidate.component.value }} {{ candidate.component.package }}</span>
+                              <span class="num">库存 {{ candidate.component.quantity }}</span>
+                              <span>{{ candidate.component.zone }}区 / {{ candidate.component.layer }}层 / {{ candidate.component.slot }}格</span>
+                            </div>
+                            <div v-if="candidate.component.manufacturer_part || candidate.component.supplier_part"
+                                 class="mt-1 break-all text-[11px]" style="color: var(--text-dim)">
+                              厂商料号 {{ candidate.component.manufacturer_part || '—' }} ·
+                              供应商料号 {{ candidate.component.supplier_part || '—' }}
+                            </div>
+                            <div class="mt-1 flex flex-wrap gap-1">
+                              <span v-for="reason in candidate.reasons" :key="reason"
+                                    class="chip !text-[10px]"
+                                    :style="reason.includes('不一致') ? 'color: var(--danger)' : 'color: var(--text-dim)'">
+                                {{ reason }}
+                              </span>
+                            </div>
+                          </div>
+                          <span class="shrink-0 text-[12px]">选择</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <div v-if="plan.missing.length" class="fade-up rounded-xl px-4 py-3"
                        style="border:1px solid rgba(217,178,62,.5); background: var(--panel-strong)">
                     <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold" style="color: var(--warn)">

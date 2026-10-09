@@ -18,6 +18,7 @@ const connection = useConnectionStore()
 
 const editOpen = ref(false)
 const editComp = ref<ComponentItem | null>(null)
+const editPos = ref<BinPosition | null>(null)
 const createPos = ref<BinPosition | null>(null)
 const bomOpen = ref(false)
 const layoutOpen = ref(false)
@@ -37,14 +38,16 @@ onMounted(async () => {
   }
 })
 
-function editComponent(comp: ComponentItem) {
+function editComponent(comp: ComponentItem, pos: BinPosition) {
   editComp.value = comp
+  editPos.value = pos
   createPos.value = null
   editOpen.value = true
 }
 
 function createComponent(pos: BinPosition) {
   editComp.value = null
+  editPos.value = null
   createPos.value = pos
   editOpen.value = true
 }
@@ -104,6 +107,7 @@ async function retry() {
     <EditDialog
       :open="editOpen"
       :comp="editComp"
+      :edit-pos="editPos"
       :create-pos="createPos"
       :layout="bins.layout"
       @close="editOpen = false"

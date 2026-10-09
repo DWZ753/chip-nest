@@ -296,6 +296,12 @@ class MergeResultOut(BaseModel):
     merged_components: int = Field(ge=0)
 
 
+class ComponentMergeRequest(BaseModel):
+    """将指定元件合入路径中选定的主格。"""
+
+    other_id: int = Field(ge=1)
+
+
 class SwapRequest(BaseModel):
     """两个元件互换槽位（同区/跨区都行）。"""
 
@@ -462,6 +468,13 @@ class BackupSnapshot(BaseModel):
     blocked_slots: list[BlockedSlotOut] = []
 
 
+class BackupResult(BaseModel):
+    """手动备份的文件位置与可下载快照。"""
+
+    backup_path: str
+    backup: BackupSnapshot
+
+
 class RestoreRequest(BaseModel):
     """用确认词恢复一份 ChipNest JSON 备份。"""
 
@@ -503,6 +516,7 @@ class BomPlanRows(BaseModel):
     """按已解析行规划库存，保留 MPN 和供应商料号。"""
 
     lines: list[BomLineOut] = Field(min_length=1, max_length=2000)
+    selections: dict[int, int] = Field(default_factory=dict)
 
 
 class BomParseOut(BaseModel):
@@ -533,11 +547,27 @@ class BomMissingOut(BaseModel):
     available: Optional[int] = None
 
 
+class BomCandidateOut(BaseModel):
+    """候选库存元件及匹配依据、冲突状态。"""
+
+    component: ComponentOut
+    reasons: list[str]
+
+
+class BomChoiceOut(BaseModel):
+    """需要人工确认的 BOM 行与候选元件。"""
+
+    line_index: int = Field(ge=0)
+    line: BomLineOut
+    candidates: list[BomCandidateOut]
+
+
 class BomPlanOut(BaseModel):
-    """规划结果：足料步骤（按灯带顺序）+ 缺料清单。"""
+    """规划结果：足料步骤、缺料清单与待确认候选。"""
 
     steps: list[BomStepOut]
     missing: list[BomMissingOut]
+    choices: list[BomChoiceOut] = Field(default_factory=list)
     requested: int = Field(ge=0)
     complete: bool = False
 

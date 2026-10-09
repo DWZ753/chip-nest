@@ -308,6 +308,53 @@ async def create_component(
     return component
 
 
+async def merge_components(
+    session: AsyncSession, keep: Component, other: Component,
+) -> Component:
+    """合并相同元件的库存和位置；保留主格设置，记录审计与撤销快照。"""
+    identity_fields = (
+        ("name", "名称"), ("value", "标称值"), ("package", "封装"),
+        ("manufacturer_part", "厂商料号"), ("supplier_part", "供应商料号"),
+    )
+    for field, label in identity_fields:
+        if ((getattr(keep, field) or "").strip().casefold() !=
+                (getattr(other, field) or "").strip().casefold()):
+            raise ValueError(f"元件属性不一致：{label}")
+    tags = list(dict.fromkeys(_load_tags(keep.tags) + _load_tags(other.tags)))
+    if len(tags) > 8:
+        raise ValueError("合并后标签超过 8 个")
+    await undo_service.record(
+        session, f"合并格 {other.name} → {keep.name}",
+        {"op": "snapshot_many", "items": [
+            {"id": keep.id, "before": undo_service.snapshot(keep)},
+            {"id": other.id, "before": undo_service.snapshot(other)},
+        ]},
+    )
+    keep.quantity += other.quantity
+    for extra in list(other.slots):
+        keep.slots.append(extra)
+    keep.slots.append(ComponentSlot(
+        component_id=keep.id, zone=other.zone, layer=other.layer,
+        slot=other.slot,
+    ))
+    keep.tags = _dump_tags(tags)
+    keep.search_text = build_search_text(
+        keep.name, keep.value or "", keep.package or "",
+        keep.manufacturer_part or "", " ".join(tags),
+    )
+    session.add(Transaction(
+        kind="adjust", component_id=keep.id, delta=0, source="ui",
+        detail=(f"合并格：{_position(other.zone, other.layer, other.slot)}"
+                f" → {_position(keep.zone, keep.layer, keep.slot)}，"
+                f"{keep.name} 数量合计 {keep.quantity}"),
+    ))
+    await session.delete(other)
+    await session.commit()
+    events.emit("component.removed", other)
+    events.emit("stock.changed", keep)
+    return keep
+
+
 async def add_slot(
     session: AsyncSession, component: Component, zone: int, layer: int, slot: int,
     source: str = "ui",
@@ -355,6 +402,34 @@ async def remove_slot(
     await session.flush()
     await undo_service.record(
         session, f"解除共用格 {_position(zone, layer, slot)}",
+        {"op": "snapshot", "id": component.id, "before": before},
+    )
+    await session.commit()
+    return component
+
+
+async def delete_position(
+    session: AsyncSession, component: Component, zone: int, layer: int, slot: int,
+) -> Component | None:
+    """只释放指定格子；主格由剩余格接替，最后一格才删除元件。"""
+    if (component.zone, component.layer, component.slot) != (zone, layer, slot):
+        return await remove_slot(session, component, zone, layer, slot)
+    if not component.slots:
+        await delete_component(session, component)
+        return None
+    before = undo_service.snapshot(component)
+    successor = min(component.slots, key=lambda s: (s.zone, s.layer, s.slot))
+    new_position = (successor.zone, successor.layer, successor.slot)
+    component.slots.remove(successor)
+    await session.flush()
+    component.zone, component.layer, component.slot = new_position
+    session.add(Transaction(
+        kind="adjust", component_id=component.id, delta=0, source="ui",
+        detail=(f"删除格子 {_position(zone, layer, slot)}，"
+                f"{component.name} 主格改为 {_position(*new_position)}"),
+    ))
+    await undo_service.record(
+        session, f"删除格子 {_position(zone, layer, slot)}",
         {"op": "snapshot", "id": component.id, "before": before},
     )
     await session.commit()

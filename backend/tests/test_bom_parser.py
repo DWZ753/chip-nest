@@ -96,7 +96,7 @@ def test_plan_pure_merge_shortage_order_and_not_found():
     lines = bom_service.parse_text(
         "0603 x5，10k电阻 x2，0.1uF电容 x2，LED指示灯 x3，2N2222 x1，10k电阻 x99"
     )
-    plan = bom_service.plan_pure(lines, comps)
+    plan = bom_service.plan_pure(lines, comps, selections={0: 1})
 
     assert plan["requested"] == 5 + 2 + 2 + 3 + 1 + 99
 
@@ -122,14 +122,16 @@ def test_plan_pure_package_and_chinese_name_match():
     ]
     lines = bom_service.parse_text("0603 x5\n贴片电阻 x2")
     plan = bom_service.plan_pure(lines, comps)
-    assert len(plan["steps"]) == 1  # 0603 只命中 10k电阻
-    assert plan["steps"][0]["component"].id == 1
-    assert plan["missing"][0]["reason"] == "not_found"  # 贴片电阻无对应槽位
+    assert plan["steps"] == []
+    assert plan["missing"] == []
+    assert [choice["line_index"] for choice in plan["choices"]] == [0, 1]
+    assert all(choice["candidates"][0]["component"].id == 1
+               for choice in plan["choices"])
 
 
 def test_plan_pure_prefers_exact_part_numbers():
     line = bom_service.BomLine(
-        raw="RC0603-10K", name="特殊电阻", value="1k", package="0805",
+        raw="RC0603-10K", name="特殊电阻", value="10k", package="0603",
         quantity=1, manufacturer_part="RC0603-10K", supplier_part="C12345",
     )
     comps = [
@@ -265,6 +267,71 @@ def _make_bom_xlsx() -> bytes:
     ws.append(["STM32H750VBT6", "LQFP-100_L14.0-W14.0", 1])
     wb.save(buf)
     return buf.getvalue()
+
+
+def _make_power_bom_xlsx() -> bytes:
+    """复现电源模块 BOM 中的数字型号与含数量字符的型号。"""
+    buf = BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.append([
+        "Quantity", "Comment", "Footprint", "Value", "Manufacturer Part",
+    ])
+    ws.append([1, 7805, "TO-220-3", "", 7805])
+    ws.append([2, "AMS1117-3.3", "SOT-223-3", "", "AMS1117-3.3"])
+    ws.append([3, "2.54-1x6P直针", "HDR-TH_6P", "", "2.54-1x6P直针"])
+    ws.append([4, 220, "R0603", 220, ""])
+    ws.append([5, "100nF", "C0603", "100nF", ""])
+    wb.save(buf)
+    wb.close()
+    return buf.getvalue()
+
+
+def test_excel_preserves_models_and_uses_quantity_column():
+    lines = bom_service.parse_excel_bytes(_make_power_bom_xlsx())
+
+    assert [line.quantity for line in lines] == [1, 2, 3, 4, 5]
+    assert [line.name for line in lines] == [
+        "7805", "AMS1117-3.3", "2.54-1x6P直针", "电阻", "电容",
+    ]
+    assert [line.value for line in lines] == [None, None, None, "220", "100nF"]
+    assert [line.package for line in lines] == [None, None, None, "0603", "0603"]
+    assert lines[0].manufacturer_part == "7805"
+
+
+def test_model_family_patterns_are_valid():
+    assert bom_service._family_cn("STM32H750VBT6") == "芯片"
+    assert bom_service._family_cn("W25Q128") == "存储芯片"
+    assert bom_service._family_cn("AMS1117-3.3") == "电源/模拟芯片"
+    assert bom_service._family_cn("Unknown model") == "元件"
+
+
+async def test_power_bom_import_and_plan(client):
+    await _seed(client, 0, name="7805", value=None, package="TO-220",
+                quantity=1)
+    response = await client.post(
+        "/api/v1/bom/import",
+        files={"file": ("power.xlsx", _make_power_bom_xlsx())},
+    )
+    assert response.status_code == 200, response.text
+    parsed = response.json()
+    assert parsed["total_quantity"] == 15
+
+    response = await client.post(
+        "/api/v1/bom/plan-rows", json={"lines": parsed["lines"]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["steps"][0]["component"]["name"] == "7805"
+    assert response.json()["steps"][0]["quantity"] == 1
+
+
+async def test_csv_rejects_invalid_quantity(client):
+    response = await client.post(
+        "/api/v1/bom/import",
+        files={"file": ("bad.csv", b"Name,Quantity\nLED,-1\n")},
+    )
+    assert response.status_code == 422, response.text
+    assert "数量" in response.json()["detail"]
 
 
 def test_excel_parser_recognizes_jlc_header():

@@ -15,7 +15,7 @@ from typing import Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config, schemas
@@ -173,10 +173,7 @@ async def merge_duplicates(
                 if tag not in tags and len(tags) < 8:
                     tags.append(tag)
             for extra in list(other.slots):
-                keep.slots.append(ComponentSlot(
-                    component_id=keep.id, zone=extra.zone, layer=extra.layer,
-                    slot=extra.slot,
-                ))
+                keep.slots.append(extra)
             keep.slots.append(ComponentSlot(
                 component_id=keep.id, zone=other.zone, layer=other.layer,
                 slot=other.slot,
@@ -185,6 +182,10 @@ async def merge_duplicates(
             merged_components += 1
         keep.tags = _dump_tags(tags)
         keep.display_tags = _dump_display_tags(tags, _as_list(keep.display_tags))
+        keep.search_text = build_search_text(
+            keep.name, keep.value or "", keep.package or "",
+            keep.manufacturer_part or "", " ".join(tags),
+        )
         session.add(Transaction(
             kind="adjust", delta=0, source="ui",
             detail=(f"合并重复元件：{keep.name} 等 {len(members)} 条 → 一条，"
@@ -214,7 +215,7 @@ def _as_list(raw: Optional[str]) -> list:
 
 
 def _backup_path() -> Path:
-    """备份文件名带时间戳；同一秒内重复清空时自动加序号。"""
+    """备份文件名带时间戳；同一秒内重复备份时自动加序号。"""
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     path = config.backup_dir() / f"chipnest-backup-{stamp}.json"
     index = 1
@@ -261,6 +262,37 @@ def _write_backup(
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                     encoding="utf-8")
     return path
+
+
+@router.post("/system/backup", response_model=schemas.BackupResult)
+async def create_backup(
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """创建可恢复的 JSON 快照并保存到备份目录。"""
+    # 快照与审计共用事务，避免备份期间库存与流水发生错位。
+    await session.execute(text("BEGIN IMMEDIATE"))
+    components = list((await session.scalars(select(Component))).all())
+    transactions = list((await session.scalars(select(Transaction))).all())
+    layout = await session.get(LayoutConfig, 1)
+    blocked_slots = list((await session.scalars(select(BlockedSlot))).all())
+    try:
+        path = _write_backup(
+            components, transactions, layout, blocked_slots, reason="manual",
+        )
+        snapshot = schemas.BackupSnapshot.model_validate_json(
+            path.read_text(encoding="utf-8"),
+        )
+    except OSError as exc:
+        logger.exception("手动备份写入失败")
+        raise HTTPException(status_code=500, detail="备份创建失败") from exc
+    session.add(Transaction(
+        kind="backup", delta=0, source="ui",
+        detail=(f"创建备份：{len(components)} 个元件、"
+                f"{len(transactions)} 条流水、{len(blocked_slots)} 个停用格"),
+    ))
+    await session.commit()
+    logger.info("手动备份已保存：{}", path)
+    return {"backup_path": str(path), "backup": snapshot}
 
 
 @router.post("/system/reset", response_model=schemas.ResetResult)

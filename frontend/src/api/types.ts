@@ -112,8 +112,15 @@ export interface BomMissing {
 export interface BomPlan {
   steps: BomStep[]
   missing: BomMissing[]
+  choices: BomChoice[]
   requested: number
   complete: boolean
+}
+
+export interface BomChoice {
+  line_index: number
+  line: BomLineOut
+  candidates: { component: ComponentItem; reasons: string[] }[]
 }
 
 export type AdapterMode = 'serial' | 'mock'
@@ -180,6 +187,11 @@ export interface RestoreResult {
   transactions: number
   blocked_slots: number
   backup_path: string
+}
+
+export interface BackupResult {
+  backup_path: string
+  backup: BackupSnapshot
 }
 
 // 联网识别候选（后端 /api/v1/lookup/*）

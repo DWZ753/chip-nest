@@ -2,7 +2,7 @@
 import type {
   AdapterStatus, BackupSnapshot, BlockedSlot, BomLineOut, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
   LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, RestoreResult, SearchIds, SwapOut,
-  TransactionRow, UndoOut, UndoPeek,
+  BackupResult, TransactionRow, UndoOut, UndoPeek,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -86,9 +86,16 @@ export const api = {
     request<ComponentItem>('/api/v1/components', { method: 'POST', body: JSON.stringify(payload) }),
   patchComponent: (id: number, patch: Record<string, unknown>) =>
     request<ComponentItem>(`/api/v1/components/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  deleteComponent: (id: number) =>
-    request<void>(`/api/v1/components/${id}`, { method: 'DELETE' }),
+  deleteComponentPosition: (
+    id: number, pos: { zone: number; layer: number; slot: number },
+  ) => request<ComponentItem | null>(`/api/v1/components/${id}/position`
+    + qs({ zone: pos.zone, layer: pos.layer, slot: pos.slot }),
+    { method: 'DELETE' }),
   // 多格存放：给元件加/减一个占用格
+  mergeComponents: (keep_id: number, other_id: number) =>
+    request<ComponentItem>(`/api/v1/components/${keep_id}/merge`, {
+      method: 'POST', body: JSON.stringify({ other_id }),
+    }),
   addComponentSlot: (id: number, pos: { zone: number; layer: number; slot: number }) =>
     request<ComponentItem>(`/api/v1/components/${id}/slots`, {
       method: 'POST', body: JSON.stringify(pos),
@@ -123,9 +130,9 @@ export const api = {
     request<BomParseOut>('/api/v1/bom/parse', { method: 'POST', body: JSON.stringify({ text }) }),
   planBom: (text: string) =>
     request<BomPlan>('/api/v1/bom/plan', { method: 'POST', body: JSON.stringify({ text }) }),
-  planBomRows: (lines: BomLineOut[]) =>
+  planBomRows: (lines: BomLineOut[], selections: Record<number, number> = {}) =>
     request<BomPlan>('/api/v1/bom/plan-rows', {
-      method: 'POST', body: JSON.stringify({ lines }),
+      method: 'POST', body: JSON.stringify({ lines, selections }),
     }),
   pickBom: (componentId: number, amount: number) =>
     request<ComponentItem>('/api/v1/bom/pick', {
@@ -171,6 +178,9 @@ export const api = {
     request<ResetResult>('/api/v1/system/reset', {
       method: 'POST', body: JSON.stringify(payload),
     }),
+  createBackup: () => request<BackupResult>('/api/v1/system/backup', {
+    method: 'POST',
+  }),
   restoreData: (payload: { confirm: string; backup: BackupSnapshot }) =>
     request<RestoreResult>('/api/v1/system/restore', {
       method: 'POST', body: JSON.stringify(payload),

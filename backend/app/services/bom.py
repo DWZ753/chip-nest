@@ -14,13 +14,16 @@
 数字视为无后缀阻值。
 
 Excel 导入（parse_excel_bytes）：识别常见表头（名称/规格/封装/数量/
-Manufacturer Part/Supplier Part），把每行组装成一段 BOM 文本后走同一
-解析器，保证文本与表格两种来源语义一致；料号随行保留供采购与识别。
+Manufacturer Part/Supplier Part），分别保留字段，避免把型号中的数字
+当作数量或封装；料号用于采购与识别。
 """
 
 import csv
+import json
 import re
+import unicodedata
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from io import BytesIO, StringIO
 from typing import Any, Optional
 
@@ -41,16 +44,21 @@ _QTY_RE = re.compile(
 )
 # 值 token：带单位前缀 → 直接带家族后缀 → 1~3 位裸数字（四位留给封装）
 _VALUE_RE = re.compile(
-    r"(?<![A-Za-z0-9])"
+    r"(?<![A-Za-z0-9_.-])"
     r"(?:"
-    r"{num}\s*{prefix}\s*{suffix}?"
+    r"\d+[RrKkM]\d+(?:Ω|欧)?"
+    r"|{num}\s*{prefix}\s*{suffix}?"
     r"|{num}\s*{suffix}"
     r"|\d{{1,3}}(?![A-Za-z0-9.])"
     r")"
-    r"(?![A-Za-z0-9])".format(num=_NUM, prefix=_PREFIX, suffix=_SUFFIX)
+    r"(?![A-Za-z0-9_.-])".format(num=_NUM, prefix=_PREFIX, suffix=_SUFFIX)
 )
 # 封装 token：独立四位数字（0603 / 0805 / 1206 …）
-_PACK_RE = re.compile(r"(?<![A-Za-z0-9])\d{4}(?![A-Za-z0-9])")
+_PACK_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:\d{4}|"
+    r"(?:SOT|SOIC|SOP|SSOP|TSSOP|QFN|LQFP|DIP|TO)[ -]?\d{1,3})"
+    r"(?![A-Za-z0-9_.-])", re.IGNORECASE,
+)
 
 # 归一化正则（组件库里 value 字段的宽容解析，允许 "22" 裸数字）
 _NORM_RE = re.compile(
@@ -164,7 +172,14 @@ def normalize_value(text: str) -> Optional[tuple[float, str]]:
     例：10k → (10000.0, R)；100nF 与 0.1uF 都归到 1e-07 F；
     空后缀（22 / 4.7k）默认电阻族。
     """
-    match = _NORM_RE.fullmatch(text.strip())
+    text = unicodedata.normalize("NFKC", text).strip()
+    text = re.sub(r"(?i)ohms?|欧姆", "Ω", text)
+    text = re.sub(
+        r"^(\d+)([RrKkM])(\d+)(Ω|欧)?$",
+        lambda m: f"{m[1]}.{m[3]}{m[2] if m[2] not in 'Rr' else ''}Ω",
+        text,
+    )
+    match = _NORM_RE.fullmatch(text)
     if match is None:
         return None
     num = float(match.group("num"))
@@ -187,55 +202,148 @@ def norm_values_equal(left: str, right: str) -> bool:
     return x == y or abs(x - y) <= 1e-9 * max(abs(x), abs(y))
 
 
-def _score_line(line: BomLine, comp: Any) -> int:
-    """按料号优先匹配，再按封装、值和名称打分。
+_NAME_ALIASES = (
+    ("resistor", "电阻"), ("capacitor", "电容"), ("inductor", "电感"),
+    ("发光二极管", "led"), ("指示灯", "led"), ("贴片", ""), ("插件", ""),
+)
+_GENERIC_NAMES = {
+    "电阻", "电容", "电感", "led", "芯片", "元件", "连接器", "二极管",
+    "电解电容", "陶瓷电容", "稳压器", "电源芯片", "testpoint",
+}
 
-    硬性剔除：封装都写明却不一致、或两边都能归一化但数值/家族不等
-    —— 视为不同物料（11k 绝不能匹配 10k 的槽）。
-    """
-    line_supplier = (line.supplier_part or "").strip().casefold()
-    comp_supplier = (getattr(comp, "supplier_part", None) or "").strip().casefold()
-    line_mpn = (line.manufacturer_part or "").strip().casefold()
-    comp_mpn = (getattr(comp, "manufacturer_part", None) or "").strip().casefold()
-    supplier_match = bool(line_supplier and comp_supplier
-                          and line_supplier == comp_supplier)
-    mpn_match = bool(line_mpn and comp_mpn and line_mpn == comp_mpn)
 
-    supplier_conflict = (
-        line_supplier and comp_supplier and not supplier_match and not mpn_match
-    )
-    mpn_conflict = line_mpn and comp_mpn and not mpn_match and not supplier_match
-    if supplier_conflict or mpn_conflict:
+def _compact(text: Optional[str]) -> str:
+    """人类字段归一化：大小写、全角、空格与分隔符。"""
+    return "".join(c for c in unicodedata.normalize(
+        "NFKC", text or "",
+    ).casefold() if c.isalnum() or c == ".")
+
+
+def _name_key(text: str) -> str:
+    """统一常见类别别名，保留型号数字与后缀。"""
+    text = _compact(text)
+    for old, new in _NAME_ALIASES:
+        text = text.replace(old, new)
+    return text
+
+
+def _package_key(text: Optional[str]) -> str:
+    """统一 R0603/0603、SOT-223/SOT223 等写法。"""
+    key = _compact(text)
+    match = re.fullmatch(r"[a-z]{1,3}(\d{4})", key)
+    return match[1] if match else key
+
+
+def _spec_value(text: Optional[str]) -> Optional[tuple[float, str]]:
+    """读取完整标称值或描述中的唯一标称值，避免混合规格误推断。"""
+    if not text:
+        return None
+    direct = normalize_value(text)
+    if direct is not None:
+        return direct
+    text = unicodedata.normalize("NFKC", text)
+    values = {normalize_value(m[0]) for m in _VALUE_RE.finditer(text)
+              if not m[0].strip().isdigit()}
+    values.discard(None)
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _name_similarity(left: str, right: str) -> int:
+    """名称精确、包含或近似评分；短碎片不参与包含匹配。"""
+    if not left or not right:
         return 0
+    if left == right:
+        return 60
+    if min(len(left), len(right)) >= 2 and (left in right or right in left):
+        return 32
+    ratio = SequenceMatcher(None, left, right).ratio()
+    return int(20 * ratio) if ratio >= 0.7 else 0
 
-    if supplier_match or mpn_match:
-        return (1000 if supplier_match else 0) + (500 if mpn_match else 0)
 
-    score = 0
-    lp, cp = line.package, comp.package
-    if lp and cp:
-        if lp == cp:
-            score += 10
-        else:
-            return 0
-
-    lv = normalize_value(line.value) if line.value else None
-    cv = normalize_value(comp.value) if comp.value else None
-    if lv is not None and cv is not None:
-        if lv == cv or norm_values_equal(line.value, comp.value):
-            score += 8
-        elif line.value and comp.value:
-            return 0  # 两边都能归一化但不等 → 硬不匹配
-
-    line_name = line.name.strip().lower()
-    comp_name = (comp.name or "").strip().lower()
-    if line_name and comp_name and (line_name in comp_name or comp_name in line_name):
-        score += 6
-    return score
+def _score_line(line: BomLine, comp: Any) -> tuple[int, list[str], bool]:
+    """返回评分、依据及自动匹配资格；冲突的料号命中只供人工确认。"""
+    tags = getattr(comp, "tags", None) or []
+    if isinstance(tags, str):
+        try:
+            tags = json.loads(tags)
+        except ValueError:
+            tags = []
+    tags = [str(tag) for tag in tags] if isinstance(tags, list) else []
+    pairs = [
+        (line.supplier_part, getattr(comp, "supplier_part", None),
+         1000, "供应商料号相同"),
+        (line.manufacturer_part, getattr(comp, "manufacturer_part", None),
+         500, "厂商料号相同"),
+    ]
+    part_matches = [p for p in pairs if p[0] and p[1]
+                    and p[0].strip().casefold() == p[1].strip().casefold()]
+    part_conflict = any(p[0] and p[1] and p not in part_matches for p in pairs)
+    if part_conflict and not part_matches:
+        return 0, [], False
+    reasons = [p[3] for p in part_matches]
+    score = sum(p[2] for p in part_matches)
+    conflicts = ["料号不一致"] if part_conflict else []
+    name = _name_key(line.name)
+    comp_name = _name_key(comp.name or "")
+    name_score = _name_similarity(name, comp_name)
+    tag_score = max((_name_similarity(name, _name_key(t)) for t in tags),
+                    default=0)
+    lp = _package_key(line.package)
+    cp = _package_key(comp.package)
+    if not cp:
+        cp = next((_package_key(t) for t in tags if _package_key(t) == lp), "")
+    package_equal = bool(lp and cp and lp == cp)
+    if lp and cp and lp != cp:
+        conflicts.append("封装不一致")
+    lv = _spec_value(line.value)
+    cv = _spec_value(comp.value)
+    if cv is None and not comp.value:
+        inferred = {_spec_value(t) for t in [comp.name or "", *tags]
+                    if not t.strip().isdigit()}
+        inferred.discard(None)
+        cv = next(iter(inferred)) if len(inferred) == 1 else None
+    value_equal = bool(lv is not None and cv is not None
+                       and lv[1] == cv[1] and abs(lv[0] - cv[0])
+                       <= 1e-9 * max(abs(lv[0]), abs(cv[0])))
+    if lv is not None and cv is not None and not value_equal:
+        conflicts.append("标称值不一致")
+    elif line.value and comp.value and (lv is None or cv is None):
+        value_equal = _compact(line.value) == _compact(comp.value)
+        if not value_equal:
+            conflicts.append("标称值不一致")
+    if any(kind in name and other in comp_name
+           for kind in ("电阻", "电容", "电感")
+           for other in ("电阻", "电容", "电感") if kind != other):
+        conflicts.append("元件类别不一致")
+    if conflicts and not part_matches:
+        return 0, [], False
+    if not (part_matches or value_equal or name_score or tag_score
+            or (package_equal and not line.name and not line.value)):
+        return 0, [], False
+    if value_equal:
+        reasons.append("标称值相同")
+        score += 40
+    if package_equal:
+        reasons.append("封装相同")
+        score += 25
+    if name_score:
+        reasons.append("名称相同" if name_score == 60 else "名称相近")
+        score += name_score
+    if tag_score > name_score:
+        reasons.append("标签命中" if tag_score == 60 else "标签相近")
+        score += tag_score
+    automatic = bool(part_matches or (value_equal and lv is not None and
+                     (package_equal or name_score >= 32) and
+                     (not name or name in _GENERIC_NAMES or
+                      name_score >= 32 or tag_score >= 32)) or
+                     (name not in _GENERIC_NAMES and
+                      (name_score == 60 or tag_score == 60)))
+    return score, reasons + conflicts, automatic and not conflicts
 
 
 def plan_pure(
-    lines: list[BomLine], components: list[Any]
+    lines: list[BomLine], components: list[Any],
+    selections: Optional[dict[int, int]] = None,
 ) -> dict[str, Any]:
     """库存对照规划（纯函数）。
 
@@ -246,17 +354,37 @@ def plan_pure(
       missing       [{reason, raw, name, value, package, quantity,
                       component_id?, available?}]，not_found 每行一条、
                     shortage 按元件合并一条
+      choices       [{line_index, line, candidates}]，近似或歧义结果待确认
     """
-    # 每行取最高分匹配（同分取先出现的元件，顺序即货架位置序）
+    selections = selections or {}
+    if any(index < 0 or index >= len(lines) for index in selections):
+        raise ValueError("BOM 行号无效")
     matched: dict[int, Any] = {}
+    choices: list[dict] = []
     for index, line in enumerate(lines):
-        best: tuple[Any, int] | None = None
+        ranked = []
         for comp in components:
-            score = _score_line(line, comp)
-            if score > 0 and (best is None or score > best[1]):
-                best = (comp, score)
-        if best is not None:
-            matched[index] = best[0]
+            score, reasons, automatic = _score_line(line, comp)
+            if score > 0:
+                ranked.append({"component": comp, "score": score,
+                               "reasons": reasons, "automatic": automatic})
+        ranked.sort(key=lambda item: item["score"], reverse=True)
+        ranked = ranked[:5]
+        if index in selections:
+            chosen = next((item for item in ranked
+                           if item["component"].id == selections[index]), None)
+            if chosen is None:
+                raise ValueError("所选元件不在当前候选中")
+            matched[index] = chosen["component"]
+        elif ranked:
+            best = ranked[0]
+            close = [item for item in ranked
+                     if item["score"] >= best["score"] - 15]
+            if best["automatic"] and len(close) == 1:
+                matched[index] = best["component"]
+            else:
+                choices.append({"line_index": index, "line": line.to_dict(),
+                                "candidates": ranked})
 
     # 同一元件多行合并：need 为取料总量
     merged: dict[int, dict[str, Any]] = {}
@@ -279,6 +407,8 @@ def plan_pure(
     for index, line in enumerate(lines):
         comp = matched.get(index)
         if comp is None:  # 找不到对应槽位
+            if any(choice["line_index"] == index for choice in choices):
+                continue
             missing.append({
                 "reason": "not_found",
                 "raw": line.raw,
@@ -323,6 +453,7 @@ def plan_pure(
         "requested": sum(line.quantity for line in lines),
         "steps": steps,
         "missing": missing,
+        "choices": choices,
     }
 
 
@@ -347,7 +478,7 @@ _PKG4_RE = re.compile(r"^[A-Za-z]{0,3}(\d{4})")
 # 常见非阻容感元件家族指纹（型号前缀/关键词 → 中文族名）。
 # 只做“展示兜底”，不改写用户原始型号（识别/购买仍看原始 Name 与 MPN）。
 _KIND_PATTERNS: list[tuple[str, str]] = [
-    (r"^(stm32|stm8|esp32|esp8266|atmega|attiny|atm|rp2040|ch32|gd32|",
+    (r"^(stm32|stm8|esp32|esp8266|atmega|attiny|atm|rp2040|ch32|gd32)",
      "芯片"),
     (r"^(w25q|at24|at25|mx25|gd25|sst25|flash)", "存储芯片"),
     (r"^(lm|ams|tl|tp|me|xc|rt|sg|mc34063|7805|1117|mp23|mp1\d)",
@@ -406,7 +537,7 @@ def _family_cn(value: Optional[str]) -> str:
 
 
 def _compose_row(row: list[Any], mapping: dict) -> Optional[BomLine]:
-    """按表头映射组装 BOM 行，并用通用解析器解析。"""
+    """分别读取表格字段，保留型号并以数量列为准。"""
     def cell(key: str) -> str:
         index = mapping.get(key)
         if index is None or index >= len(row):
@@ -420,32 +551,32 @@ def _compose_row(row: list[Any], mapping: dict) -> Optional[BomLine]:
     mpn = cell("manufacturer_part")
     supplier = cell("supplier_part")
 
-    if not name and not value and not fp and not raw_qty and not mpn:
+    if not any((name, value, fp, raw_qty, mpn, supplier)):
         return None
-    text = " ".join(part for part in (name, value) if part)
     pkg = _footprint_package(fp)
-    if pkg:
-        text += " " + pkg
-    if raw_qty:
-        text += " ×" + raw_qty
+    try:
+        quantity = int(raw_qty) if raw_qty else 1
+    except ValueError as exc:
+        raise ValueError(f"BOM 数量无效：{raw_qty}") from exc
+    if quantity < 0:
+        raise ValueError(f"BOM 数量无效：{raw_qty}")
 
-    lines = parse_text(text)
-    if not lines:
-        # 只有料号没有可识别文本的罕见行：用料号本身当名字
-        if mpn:
-            return BomLine(raw=text, name=mpn, quantity=1,
-                           manufacturer_part=mpn)
-        return None
-    line = lines[0]
-    # 纯值行（如 100nF）或只有型号指纹的行：补中文族名展示
-    if not line.name and line.value:
-        line.name = _family_cn(line.value)
-    elif not line.name and not line.value:
-        line.name = _family_cn(f"{mpn} {name}")
-    line.raw = text
-    line.manufacturer_part = mpn or None
-    line.supplier_part = supplier or None
-    return line
+    # 无独立值列时仅从完整标称值推断；裸数字型号不当成阻值。
+    if not value and normalize_value(name) is not None:
+        if not name.isdigit() or pkg:
+            value = name
+    display_name = name or mpn or supplier or _family_cn(value)
+    if name == value and normalize_value(value) is not None:
+        display_name = _family_cn(value)
+    parts = [name]
+    if value != name:
+        parts.append(value)
+    parts.extend([pkg or "", f"×{quantity}"])
+    return BomLine(
+        raw=" ".join(part for part in parts if part), name=display_name,
+        value=value or None, package=pkg, quantity=quantity,
+        manufacturer_part=mpn or None, supplier_part=supplier or None,
+    )
 
 
 def _find_header(rows: list[list[Any]]) -> Optional[tuple[int, dict]]:
@@ -500,7 +631,7 @@ def parse_csv_bytes(data: bytes) -> list[BomLine]:
 
 
 def parse_excel_bytes(data: bytes) -> list[BomLine]:
-    """解析 .xlsx BOM：识别常见表头（名称/封装/数量），组装后走通用解析。"""
+    """解析 .xlsx BOM：识别常见表头并分别读取名称、封装与数量。"""
     try:
         workbook = load_workbook(BytesIO(data), data_only=True, read_only=True)
     except Exception as exc:

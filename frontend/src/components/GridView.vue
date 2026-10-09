@@ -14,7 +14,7 @@ import { useTheme } from '../stores/theme'
 import BinCard from './BinCard.vue'
 
 const emit = defineEmits<{
-  edit: [ComponentItem]
+  edit: [ComponentItem, BinPosition]
   create: [BinPosition]
 }>()
 
@@ -22,55 +22,72 @@ const rootEl = ref<HTMLElement | null>(null)
 
 // ---------- 批量选择模式 ----------
 const batchMode = ref(false)
-const selectedIds = ref<Set<number>>(new Set())
+interface SelectedPosition {
+  component_id: number
+  pos: BinPosition
+}
+const selectedPositions = ref<Map<string, SelectedPosition>>(new Map())
+const selectedIds = computed(() => new Set(
+  [...selectedPositions.value.values()].map((item) => item.component_id),
+))
+const selectablePositions = computed<SelectedPosition[]>(() =>
+  bins.components.flatMap((comp) => [comp, ...(comp.slots ?? [])].map((pos) => ({
+    component_id: comp.id,
+    pos: { zone: pos.zone, layer: pos.layer, slot: pos.slot },
+  }))),
+)
 const confirmDelete = ref(false)
+const deleteBusy = ref(false)
 let confirmTimer: ReturnType<typeof setTimeout> | undefined
 
 function enterBatch() {
   batchMode.value = true
-  selectedIds.value = new Set()
+  selectedPositions.value = new Map()
 }
 
 function exitBatch() {
   batchMode.value = false
-  selectedIds.value = new Set()
+  selectedPositions.value = new Map()
   confirmDelete.value = false
   window.clearTimeout(confirmTimer)
 }
 
-function compsInZone(zone: number): ComponentItem[] {
-  return bins.components.filter((c) => c.zone === zone)
+function positionsInZone(zone: number): SelectedPosition[] {
+  return selectablePositions.value.filter((item) => item.pos.zone === zone)
 }
 
 function zoneFullySelected(zone: number): boolean {
-  const list = compsInZone(zone)
-  return list.length > 0 && list.every((c) => selectedIds.value.has(c.id))
+  const list = positionsInZone(zone)
+  return list.length > 0 && list.every((item) =>
+    selectedPositions.value.has(positionKey(item.pos)))
 }
 
 function selectZone(zone: number) {
-  const next = new Set(selectedIds.value)
-  const list = compsInZone(zone)
+  const next = new Map(selectedPositions.value)
+  const list = positionsInZone(zone)
   if (zoneFullySelected(zone)) {
-    for (const c of list) next.delete(c.id)
+    for (const item of list) next.delete(positionKey(item.pos))
   } else {
-    for (const c of list) next.add(c.id)
+    for (const item of list) next.set(positionKey(item.pos), item)
   }
-  selectedIds.value = next
+  selectedPositions.value = next
 }
 
 function selectAll() {
-  selectedIds.value = new Set(bins.components.map((c) => c.id))
+  selectedPositions.value = new Map(selectablePositions.value.map((item) =>
+    [positionKey(item.pos), item]))
 }
 
 function clearSelection() {
-  selectedIds.value = new Set()
+  selectedPositions.value = new Map()
 }
 
-function toggleSelect(comp: ComponentItem) {
-  const next = new Set(selectedIds.value)
-  if (next.has(comp.id)) next.delete(comp.id)
-  else next.add(comp.id)
-  selectedIds.value = next
+function toggleSelect(comp: ComponentItem, pos: BinPosition) {
+  const next = new Map(selectedPositions.value)
+  const key = positionKey(pos)
+  if (next.has(key)) next.delete(key)
+  else next.set(key, { component_id: comp.id, pos })
+  selectedPositions.value = next
 }
 
 // 区名就地编辑
@@ -104,7 +121,7 @@ function onCard(comp: ComponentItem, isShared = false, pos?: BinPosition) {
     return
   }
   if (batchMode.value) {
-    toggleSelect(comp)
+    toggleSelect(comp, pos ?? comp)
     return
   }
   if (moveMode.value) {
@@ -117,7 +134,7 @@ function onCard(comp: ComponentItem, isShared = false, pos?: BinPosition) {
     else pickCard(comp)
     return
   }
-  emit('edit', comp)
+  emit('edit', comp, pos ?? comp)
 }
 
 const confirmClearSupplier = ref(false)
@@ -141,6 +158,7 @@ async function clearSupplierParts() {
 }
 
 async function deleteSelected() {
+  if (deleteBusy.value) return
   if (!confirmDelete.value) {
     confirmDelete.value = true
     window.clearTimeout(confirmTimer)
@@ -148,13 +166,15 @@ async function deleteSelected() {
     return
   }
   window.clearTimeout(confirmTimer)
+  deleteBusy.value = true
   try {
-    for (const id of selectedIds.value) {
-      await bins.removeComponent(id)
+    for (const item of selectedPositions.value.values()) {
+      await bins.removePosition(item.component_id, item.pos)
     }
   } finally {
     await bins.refreshAll().catch(() => undefined)
     exitBatch()
+    deleteBusy.value = false
   }
 }
 
@@ -287,6 +307,7 @@ function onEmptyClick(pos: BinPosition) {
 // ---------- 合并格模式：几个格子共用一个元件 ----------
 const mergeMode = ref(false)
 const mergeSourceId = ref<number | null>(null)
+const mergeBusy = ref(false)
 const mergeSource = computed<ComponentItem | null>(
   () => bins.components.find((c) => c.id === mergeSourceId.value) ?? null,
 )
@@ -333,14 +354,34 @@ function toggleMerge() {
   else enterMerge()
 }
 
-// 点有料格子：选中作主格 / 换主格 / 取消；点共用卡：解除那一格
+// 先选主格，再点相同元件合并；点自己的共用卡解除那一格。
 async function mergePickCard(comp: ComponentItem, isShared: boolean, pos?: BinPosition) {
+  if (mergeBusy.value) return
+  const src = mergeSource.value
+  if (src && src.id !== comp.id) {
+    mergeBusy.value = true
+    try {
+      const updated = await bins.mergeComponents(src.id, comp.id)
+      const from = { zone: comp.zone, layer: comp.layer, slot: comp.slot }
+      const to = { zone: src.zone, layer: src.layer, slot: src.slot }
+      flashNote(`已把 ${posText(from)} 并入 ${posText(to)}，`
+        + `数量合计 ${updated.quantity}`)
+    } catch (e) {
+      flashNote(`合并失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      mergeBusy.value = false
+    }
+    return
+  }
   if (isShared && pos) {
+    mergeBusy.value = true
     try {
       await bins.removeSlot(comp.id, pos)
       flashNote(`已解除 ${posText(pos)}`)
     } catch (e) {
       flashNote(`解除失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      mergeBusy.value = false
     }
     return
   }
@@ -349,16 +390,20 @@ async function mergePickCard(comp: ComponentItem, isShared: boolean, pos?: BinPo
 }
 
 async function mergeClickEmpty(pos: BinPosition) {
+  if (mergeBusy.value) return
   const src = mergeSource.value
   if (!src) {
     flashNote('未选主格')
     return
   }
+  mergeBusy.value = true
   try {
     await bins.addSlot(src.id, pos)
     flashNote(`已把 ${posText(pos)} 并入「${src.name}」`)
   } catch (e) {
     flashNote(`合并失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    mergeBusy.value = false
   }
 }
 
@@ -463,7 +508,7 @@ function layerCells(zone: number, layer: number): CellEntry[] {
   }
 
   // 2) 能拼成矩形的合成一张跨格卡
-  if (mergeView.value && !mergeMode.value) {
+  if (mergeView.value && !mergeMode.value && !batchMode.value) {
     for (const { comp, slots } of groups.values()) {
       if (slots.length < 2) continue
       const r0 = Math.min(...slots.map((s) => Math.floor(s / cols)))
@@ -531,7 +576,7 @@ async function fixOrphans() {
     <!-- 批量操作条 -->
     <div class="flex items-center justify-end gap-2">
       <template v-if="batchMode">
-        <span class="chip num">已选 {{ selectedIds.size }} 个</span>
+        <span class="chip num">已选 {{ selectedPositions.size }} 格</span>
         <button class="btn !py-1.5 text-xs" @click="selectAll">全选</button>
         <button class="btn !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="clearSelection">清空选择</button>
         <button class="btn btn-danger !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="deleteSelected">
@@ -730,7 +775,7 @@ async function fixOrphans() {
                 :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
                 :guide="bins.guideKey === positionKey(cell.pos)"
                 :selectable="batchMode"
-                :selected="batchMode && selectedIds.has(cell.comp!.id)"
+                :selected="batchMode && selectedPositions.has(positionKey(cell.pos))"
                 :show-supplier="batchMode"
                 :picked="cell.kind === 'shared' ? isSlotHeld(cell) : heldId === cell.comp!.id"
                 :swap-ready="!pickedSlot && !!picked && pickedId !== cell.comp!.id"

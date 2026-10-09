@@ -151,6 +151,7 @@ const kindLabel: Record<string, { text: string; color: string }> = {
   bom_pick: { text: '取料', color: 'var(--accent-strong)' },
   adjust: { text: '修改', color: 'var(--info)' },
   delete: { text: '删除', color: 'var(--danger)' },
+  backup: { text: '备份', color: 'var(--info)' },
 }
 </script>
 

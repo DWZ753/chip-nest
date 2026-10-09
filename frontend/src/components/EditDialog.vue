@@ -16,6 +16,7 @@ import StepperInput from './ui/StepperInput.vue'
 const props = defineProps<{
   open: boolean
   comp: ComponentItem | null      // null = 新建
+  editPos: BinPosition | null
   createPos: BinPosition | null   // 新建时的落位
   layout: LayoutConfig
 }>()
@@ -320,7 +321,7 @@ async function remove() {
   }
   busy.value = true
   try {
-    await bins.removeComponent(props.comp.id)
+    await bins.removePosition(props.comp.id, props.editPos ?? props.comp)
     emit('close')
   } catch (e) { fail(e) } finally { busy.value = false }
 }
@@ -363,6 +364,10 @@ function close() {
                 <DialogTitle class="text-base font-extrabold">
                   {{ isCreate ? '新建元件' : '编辑元件' }}
                 </DialogTitle>
+                <span v-if="!isCreate && editPos" class="chip">
+                  {{ editPos.zone }}区 / {{ editPos.layer }}层 /
+                  {{ editPos.slot }}格
+                </span>
                 <button class="icon-btn ml-auto !h-8 !w-8" @click="close"><X :size="16" /></button>
               </div>
 
@@ -521,7 +526,8 @@ function close() {
 
                 <div class="mt-2 flex items-center gap-2">
                   <button v-if="!isCreate" class="btn btn-danger" :disabled="busy" @click="remove">
-                    <Trash2 :size="14" /> {{ deleting ? '确认删除？' : '删除' }}
+                    <Trash2 :size="14" />
+                    {{ deleting ? '确认删除此格？' : '删除此格' }}
                   </button>
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="close">取消</button>

@@ -7,7 +7,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -140,6 +140,24 @@ async def create_component(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.post("/{component_id}/merge", response_model=schemas.ComponentOut)
+async def merge_component(
+    component_id: int, body: schemas.ComponentMergeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> Component:
+    """手动合并两个相同元件，保留先选中的主格。"""
+    if component_id == body.other_id:
+        raise HTTPException(status_code=400, detail="两个格子相同")
+    # 读取前取得写锁，避免并发库存操作导致数量丢失或重复合并。
+    await session.execute(text("BEGIN IMMEDIATE"))
+    keep = await _get_component(session, component_id)
+    other = await _get_component(session, body.other_id)
+    try:
+        return await stock_service.merge_components(session, keep, other)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/{component_id}/slots", response_model=schemas.ComponentOut)
 async def add_component_slot(
     component_id: int,
@@ -152,6 +170,26 @@ async def add_component_slot(
         return await stock_service.add_slot(session, component, body.zone, body.layer, body.slot)
     except (stock_service.PositionBusy, stock_service.SlotBlocked,
             stock_service.OutOfLayout) as exc:
+        raise _map_error(exc)
+
+
+@router.delete("/{component_id}/position",
+               response_model=schemas.ComponentOut | None)
+async def delete_component_position(
+    component_id: int,
+    zone: int = Query(ge=1),
+    layer: int = Query(ge=1),
+    slot: int = Query(ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> Component | None:
+    """删除指定存放格；有剩余格子时保留元件与库存。"""
+    await session.execute(text("BEGIN IMMEDIATE"))
+    component = await _get_component(session, component_id)
+    try:
+        return await stock_service.delete_position(
+            session, component, zone, layer, slot,
+        )
+    except stock_service.PositionBusy as exc:
         raise _map_error(exc)
 
 

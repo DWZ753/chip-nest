@@ -303,6 +303,14 @@ export const useBinsStore = defineStore('bins', () => {
     return result
   }
 
+  // 合并已有元件：先选的主格保留，数量相加，转移全部格子。
+  async function mergeComponents(keep_id: number, other_id: number) {
+    const updated = await api.mergeComponents(keep_id, other_id)
+    components.value = components.value.filter((c) => c.id !== other_id)
+    upsert(updated)
+    return updated
+  }
+
   // 多格存放：加/减一个占用格（库存不变，只是一个物料放在多处）
   async function addSlot(id: number, pos: BinPosition) {
     const updated = await api.addComponentSlot(id, pos)
@@ -324,9 +332,10 @@ export const useBinsStore = defineStore('bins', () => {
     return result
   }
 
-  async function removeComponent(id: number) {
-    await api.deleteComponent(id)
-    components.value = components.value.filter((c) => c.id !== id)
+  async function removePosition(id: number, pos: BinPosition) {
+    const updated = await api.deleteComponentPosition(id, pos)
+    if (updated) upsert(updated)
+    else components.value = components.value.filter((c) => c.id !== id)
   }
 
   async function adjustStock(id: number, delta: number, note?: string) {
@@ -422,7 +431,8 @@ export const useBinsStore = defineStore('bins', () => {
     freeSlots, upsert,
     updateZoneName,
     moveComponent, swapComponents, addSlot, removeSlot, blockAt, unblockAt, undoLast,
-    removeComponent, adjustStock, relocateOrphans, setGuidePosition, slotOwner,
+    mergeComponents,
+    removePosition, adjustStock, relocateOrphans, setGuidePosition, slotOwner,
     posInLayout, blockedKeys,
     resetAfterWipe,
   }

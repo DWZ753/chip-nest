@@ -47,7 +47,7 @@ def db_file() -> Path:
 
 
 def backup_dir() -> Path:
-    """清空数据前的自动备份目录：默认与数据库同目录的 backups/。"""
+    """手动及自动备份目录：默认与数据库同目录的 backups/。"""
     raw = os.getenv("CHIPNEST_BACKUP_DIR")
     path = Path(raw) if raw else db_file().parent / "backups"
     path.mkdir(parents=True, exist_ok=True)
