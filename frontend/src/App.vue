@@ -24,6 +24,7 @@ const createPos = ref<BinPosition | null>(null)
 const bomOpen = ref(false)
 const layoutOpen = ref(false)
 const manualOpen = ref(false)
+const pending_dialog = ref<'manual' | 'inventory' | null>(null)
 const settingsOpen = ref(false)
 const guideOpen = ref(false)
 const guideSteps = ref<BomStep[]>([])
@@ -61,13 +62,21 @@ function startGuide(steps: BomStep[]) {
 }
 
 function openManual() {
+  pending_dialog.value = 'manual'
   bomOpen.value = false
-  manualOpen.value = true
 }
 
 function closeManual() {
+  pending_dialog.value = 'inventory'
   manualOpen.value = false
-  bomOpen.value = true
+}
+
+/** 上一个窗口关闭后再打开目标窗口，避免焦点锁相互争抢。 */
+function finish_dialog_switch(target: 'manual' | 'inventory') {
+  if (pending_dialog.value !== target) return
+  pending_dialog.value = null
+  if (target === 'manual') manualOpen.value = true
+  else bomOpen.value = true
 }
 
 // 一键清空之后：收掉引导/BOM 弹窗，清检索词并重拉整个网格
@@ -125,12 +134,14 @@ async function retry() {
       @close="bomOpen = false"
       @manual="openManual"
       @start="startGuide"
+      @after-leave="finish_dialog_switch('manual')"
     />
     <LayoutDialog
       :open="layoutOpen"
       @close="layoutOpen = false"
     />
-    <ManualStockDialog :open="manualOpen" @close="closeManual" />
+    <ManualStockDialog :open="manualOpen" @close="closeManual"
+                       @after-leave="finish_dialog_switch('inventory')" />
     <AppSettingsDialog
       :open="settingsOpen"
       @close="settingsOpen = false"

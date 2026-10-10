@@ -37,6 +37,7 @@
   --f-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'SF Mono',
     'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', monospace;
   --glow-primary: 0 0 18px rgba(76, 195, 240, 0.28);
+  --motion-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.light {
@@ -157,7 +158,8 @@ html.light body::before {
   background: linear-gradient(180deg, var(--surface-2), var(--surface));
   cursor: pointer;
   user-select: none;
-  transition: transform 0.12s ease, box-shadow 0.2s, border-color 0.2s,
+  transition: transform 0.18s var(--motion-out),
+    box-shadow 0.2s, border-color 0.2s,
     background 0.2s, opacity 0.2s, filter 0.2s;
 }
 .btn:hover {
@@ -167,6 +169,7 @@ html.light body::before {
   filter: brightness(1.08);
 }
 .btn:active { transform: scale(0.97); }
+.btn:disabled:active { transform: none; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; box-shadow: none; }
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
@@ -196,7 +199,8 @@ html.light .btn-primary { color: #fff; }
   color: var(--text-dim);
   background: transparent;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition: transform 0.2s var(--motion-out), color 0.18s,
+    background 0.18s, border-color 0.18s, box-shadow 0.18s;
 }
 .icon-btn:hover {
   background: var(--panel);
@@ -205,6 +209,8 @@ html.light .btn-primary { color: #fff; }
   box-shadow: var(--glow-primary);
   transform: translateY(-1px);
 }
+.icon-btn:active { transform: translateY(0) scale(0.9); }
+.icon-btn:disabled { cursor: not-allowed; transform: none; }
 
 .input, .select, .textarea {
   width: 100%;
@@ -276,7 +282,7 @@ html.light .input:focus, html.light .select:focus, html.light .textarea:focus {
   cursor: pointer;
   overflow: hidden;
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.22s,
-    border-color 0.22s;
+    border-color 0.22s, opacity 0.2s, filter 0.2s;
   min-height: 96px;
   display: flex;
   flex-direction: column;
@@ -300,6 +306,7 @@ html.light .bin-card {
   box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.8), var(--glow-primary);
 }
 .bin-card:hover::before { opacity: 0.9; }
+.bin-card:active { transform: translateY(-1px) scale(0.985); }
 /* 名称默认最多两行；灯号/数量常驻右侧占位，避免悬停时布局跳动 */
 .bin-card .card-name {
   display: -webkit-box;
@@ -309,7 +316,9 @@ html.light .bin-card {
   word-break: break-word;
 }
 .bin-card .meta-side { opacity: 0; transition: opacity 0.18s ease; }
-.bin-card:hover .meta-side { opacity: 1; }
+.bin-card:hover .meta-side,
+.bin-card:focus-within .meta-side,
+.bin-card:has(.quantity-enter-active) .meta-side { opacity: 1; }
 /* 头行数量小胶囊（随行布局，绝不与名称重叠） */
 .qty-chip {
   background: var(--accent-dim);
@@ -345,6 +354,7 @@ html.light .chip-tag-show { color: #5a5ecb; }
   display: grid;
   place-items: center;
   z-index: 2;
+  animation: selection-in 0.22s var(--motion-out);
 }
 
 /* 显式等宽（型号/数值）覆盖 chip 默认字体 */
@@ -775,3 +785,150 @@ html.light .chip-pkg { color: #8a6a3c; }
 /* 卡片显示链：最多两行，行距收紧 */
 .chips-row { gap: 3px; row-gap: 2px; align-content: flex-start; }
 .chips-row .chip-cell { flex: 0 0 auto; }
+
+/* 开合节奏统一：面板抬起落位，背景先淡入、后淡出。 */
+.dialog-backdrop-enter { transition: opacity 0.22s ease-out; }
+.dialog-backdrop-leave { transition: opacity 0.18s ease-in; }
+.dialog-panel-enter {
+  transition: opacity 0.28s ease-out, transform 0.34s var(--motion-out);
+}
+.dialog-panel-leave {
+  pointer-events: none;
+  transition: opacity 0.16s ease-in, transform 0.18s ease-in;
+}
+.dialog-panel-from {
+  opacity: 0;
+  transform: translateY(24px) scale(0.96);
+}
+.dialog-panel-visible { opacity: 1; transform: none; }
+.dialog-panel-to { opacity: 0; transform: translateY(12px) scale(0.98); }
+
+/* 分组滑块按按钮实际宽度移动，内容立即替换后淡入。 */
+.motion-tabs {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.motion-tabs-indicator {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 3px 12px -6px var(--accent);
+  transition: transform 0.3s var(--motion-out),
+    width 0.3s var(--motion-out);
+  pointer-events: none;
+}
+.motion-tab {
+  position: relative;
+  flex: 1 0 auto;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.18s, transform 0.18s var(--motion-out);
+}
+.motion-tab:hover { color: var(--text); }
+.motion-tab:active { transform: scale(0.96); }
+.motion-tab[aria-pressed='true'] { color: #03131c; }
+html.light .motion-tab[aria-pressed='true'] { color: #fff; }
+.motion-tab:disabled { cursor: not-allowed; }
+.motion-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@keyframes panel-reveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.panel-reveal { animation: panel-reveal 0.26s var(--motion-out); }
+.motion-panel {
+  min-height: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  transition: height 0.34s var(--motion-out);
+}
+.motion-panel-content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* 只在货架首次呈现及格子内容变化时动，不循环播放。 */
+@keyframes shelf-reveal {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+.topbar-reveal { animation: shelf-reveal 0.4s var(--motion-out) both; }
+.shelf-reveal {
+  animation: shelf-reveal 0.48s var(--motion-out) both;
+  animation-delay: var(--shelf-delay, 0ms);
+}
+.cell-enter-active {
+  transition: opacity 0.2s ease-out, transform 0.28s var(--motion-out);
+}
+.cell-enter-from { opacity: 0; transform: translateY(8px) scale(0.96); }
+.cell-leave-active { display: none; }
+.cell-move { transition: none; }
+@keyframes selection-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+.qty-chip { overflow: hidden; }
+.quantity-enter-active {
+  transition: opacity 0.18s, transform 0.22s var(--motion-out);
+}
+.quantity-leave-active { transition: opacity 0.08s, transform 0.08s; }
+.quantity-enter-from { opacity: 0; transform: translateY(7px); }
+.quantity-leave-to { opacity: 0; transform: translateY(-5px); }
+.popover-enter-active, .notice-enter-active {
+  transition: opacity 0.18s ease-out, transform 0.24s var(--motion-out);
+}
+.popover-leave-active, .notice-leave-active {
+  pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s ease-in;
+}
+.popover-enter-from, .popover-leave-to {
+  opacity: 0;
+  transform: translateY(-5px) scale(0.98);
+}
+.notice-enter-from, .notice-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.theme-icon-enter-active {
+  transition: opacity 0.18s, transform 0.26s var(--motion-out);
+}
+.theme-icon-leave-active { transition: opacity 0.1s, transform 0.1s; }
+.theme-icon-enter-from { opacity: 0; transform: rotate(-50deg) scale(0.6); }
+.theme-icon-leave-to { opacity: 0; transform: rotate(40deg) scale(0.6); }
+
+/* 系统偏好优先，保留描边等静态反馈及所有操作。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  .bin-card:hover, .bin-card:active, .card-empty:hover,
+  .icon-btn:hover, .icon-btn:active, .btn:active, .motion-tab:active {
+    transform: none;
+  }
+  .bin-card.search-hit {
+    box-shadow: 0 0 0 2px var(--accent), var(--glow-primary);
+  }
+}

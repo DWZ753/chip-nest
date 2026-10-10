@@ -111,16 +111,18 @@ async function saveLayout() {
 <template>
   <TransitionRoot :show="open" as="template">
     <Dialog as="div" class="relative z-50" @close="emit('close')">
-      <TransitionChild as="template" enter="duration-200 ease-out" enter-from="opacity-0"
-                       leave="duration-150 ease-in" leave-to="opacity-0">
+      <TransitionChild as="template" enter="dialog-backdrop-enter"
+                       enter-from="opacity-0" enter-to="opacity-100"
+                       leave="dialog-backdrop-leave" leave-to="opacity-0">
         <div class="fixed inset-0 bg-black/60 backdrop-blur-[6px]" />
       </TransitionChild>
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="duration-200 ease-out"
-                           enter-from="opacity-0 translate-y-3 scale-95"
-                           enter-to="opacity-100 translate-y-0 scale-100"
-                           leave="duration-150 ease-in" leave-to="opacity-0 translate-y-3 scale-95">
+          <TransitionChild as="template" enter="dialog-panel-enter"
+                           enter-from="dialog-panel-from"
+                           enter-to="dialog-panel-visible"
+                           leave="dialog-panel-leave"
+                           leave-to="dialog-panel-to">
             <DialogPanel class="glass-strong flex max-h-[88vh] w-full max-w-xl flex-col rounded-2xl p-5">
               <div class="mb-4 flex items-center gap-2.5">
                 <LayoutGrid :size="17" style="color: var(--accent)" />
@@ -156,7 +158,7 @@ async function saveLayout() {
                       <div>
                         <label class="field-label">区{{ z }}名称</label>
                         <input v-model="form.zone_names[z - 1]" class="input !py-1.5 text-[13px]"
-                               maxlength="24" placeholder="第 {{ z }} 区" />
+                               maxlength="24" :placeholder="'第 ' + z + ' 区'" />
                       </div>
                       <div>
                         <label class="field-label">层</label>

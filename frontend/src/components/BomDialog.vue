@@ -15,9 +15,13 @@ import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
 import InventoryMaintenancePanel from './inventory_maintenance_panel.vue'
 import OperationHistoryPanel from './operation_history_panel.vue'
+import MotionTabs from './ui/motion_tabs.vue'
+import MotionPanel from './ui/motion_panel.vue'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; manual: []; start: [BomStep[]] }>()
+const emit = defineEmits<{
+  close: []; manual: []; start: [BomStep[]]; afterLeave: []
+}>()
 
 const bins = useBinsStore()
 
@@ -315,19 +319,22 @@ const canStart = computed(() => !busy.value && !!plan.value
 </script>
 
 <template>
-  <TransitionRoot :show="open && !picker.active" as="template">
+  <TransitionRoot :show="open && !picker.active" as="template"
+                  @after-leave="emit('afterLeave')">
     <Dialog as="div" class="relative z-50" @close="emit('close')">
-      <TransitionChild as="template" enter="duration-200 ease-out" enter-from="opacity-0"
-                       leave="duration-150 ease-in" leave-to="opacity-0">
+      <TransitionChild as="template" enter="dialog-backdrop-enter"
+                       enter-from="opacity-0" enter-to="opacity-100"
+                       leave="dialog-backdrop-leave" leave-to="opacity-0">
         <div class="fixed inset-0 bg-black/60 backdrop-blur-[6px]" />
       </TransitionChild>
 
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="duration-200 ease-out"
-                           enter-from="opacity-0 translate-y-3 scale-95"
-                           enter-to="opacity-100 translate-y-0 scale-100"
-                           leave="duration-150 ease-in" leave-to="opacity-0 translate-y-3 scale-95">
+          <TransitionChild as="template" enter="dialog-panel-enter"
+                           enter-from="dialog-panel-from"
+                           enter-to="dialog-panel-visible"
+                           leave="dialog-panel-leave"
+                           leave-to="dialog-panel-to">
             <DialogPanel class="glass-strong flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl p-5">
               <div class="mb-3 flex items-center gap-2.5">
                 <DialogTitle class="text-base font-extrabold tracking-wide">库存</DialogTitle>
@@ -341,15 +348,12 @@ const canStart = computed(() => !busy.value && !!plan.value
                         @click="emit('close')"><X :size="16" /></button>
               </div>
 
-              <nav class="mb-4 flex flex-wrap gap-2" aria-label="库存分组">
-                <button v-for="tab in tabs" :key="tab.key"
-                        class="btn !py-1.5 text-xs"
-                        :class="active_tab === tab.key
-                          ? 'btn-primary' : 'btn-ghost'"
-                        :aria-pressed="active_tab === tab.key"
-                        :disabled="busy || idBusy"
-                        @click="switch_tab(tab.key)">{{ tab.label }}</button>
-              </nav>
+              <MotionTabs :model-value="active_tab" :tabs="tabs"
+                          label="库存分组" :disabled="busy || idBusy"
+                          @update:model-value="switch_tab" />
+              <MotionPanel>
+              <div :key="active_tab + ':' + view"
+                   class="panel-reveal flex min-h-0 flex-1 flex-col">
               <InventoryMaintenancePanel
                 v-if="active_tab === 'maintenance'" />
               <OperationHistoryPanel v-else-if="active_tab === 'history'" />
@@ -599,6 +603,8 @@ const canStart = computed(() => !busy.value && !!plan.value
                   </button>
                 </div>
               </div>
+              </div>
+              </MotionPanel>
             </DialogPanel>
           </TransitionChild>
         </div>

@@ -8,6 +8,7 @@ CHIPNEST_DB / CHIPNEST_LOG_DIR 重定向到 userData）。
 
 import os
 import sys
+import threading
 
 try:  # Windows 控制台可能 GBK，日志输出前先统一 UTF-8
     sys.stdout.reconfigure(encoding="utf-8")
@@ -21,11 +22,57 @@ import uvicorn
 from app.main import app  # noqa: E402
 
 
+def watch_desktop_parent(server: uvicorn.Server) -> None:
+    """@brief 桌面进程结束时停止服务，覆盖安装强制关闭的情况。"""
+    parent_pid = os.getenv("CHIPNEST_PARENT_PID")
+
+    if sys.platform != "win32" or not parent_pid:
+        return
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL,
+                                  wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+
+    # SYNCHRONIZE：只等待进程退出，不需要终止桌面进程的权限。
+    parent = kernel.OpenProcess(0x00100000, False, int(parent_pid))
+
+    if not parent:
+        # 桌面进程可能在 PyInstaller 解包期间已退出。
+        if ctypes.get_last_error() == 87:
+            sys.exit(0)
+
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    def wait_parent() -> None:
+        """@brief 等待桌面进程退出并通知 uvicorn 正常停止。"""
+        try:
+            if kernel.WaitForSingleObject(parent, 0xFFFFFFFF) == 0:
+                server.should_exit = True
+        finally:
+            kernel.CloseHandle(parent)
+
+    threading.Thread(target=wait_parent, daemon=True).start()
+
+
 def main() -> None:
     host = os.getenv("CHIPNEST_HOST", "127.0.0.1")
     port = int(os.getenv("CHIPNEST_PORT", "8765"))
     # log_config=None：日志交给 app.log 的 Loguru 接管，避免重复配置
-    uvicorn.run(app, host=host, port=port, log_config=None)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=host, port=port, log_config=None),
+    )
+
+    watch_desktop_parent(server)
+
+    server.run()
 
 
 if __name__ == "__main__":

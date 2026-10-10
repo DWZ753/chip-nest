@@ -178,7 +178,11 @@ async function locatePrimary(id: number) {
   primaryTimer = window.setTimeout(() => {
     locatedPrimaryId.value = null
   }, 2500)
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  target.scrollIntoView({
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'auto' : 'smooth',
+    block: 'center',
+  })
 }
 
 onBeforeUnmount(() => window.clearTimeout(primaryTimer))
@@ -191,7 +195,11 @@ watch(() => bins.searchNavigationTick, async () => {
   const target = rootEl.value?.querySelector<HTMLElement>(
     `[data-component-id="${id}"]`,
   ) ?? rootEl.value?.querySelector<HTMLElement>('[data-orphan-warning]')
-  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  target?.scrollIntoView({
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'auto' : 'smooth',
+    block: 'center',
+  })
 })
 
 // ---------- 移动模式：点按拿起 → 点空格放下 ----------
@@ -606,6 +614,7 @@ async function fixOrphans() {
     </div>
 
     <!-- 选格中：点一个空格 -->
+    <Transition name="notice">
     <div
       v-if="picker.active"
       class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
@@ -618,8 +627,10 @@ async function fixOrphans() {
       </span>
       <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="picker.cancel()">取消</button>
     </div>
+    </Transition>
 
     <!-- 停用格：点空格标记 / 点不可用格恢复 -->
+    <Transition name="notice">
     <div
       v-if="blockMode"
       class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
@@ -631,8 +642,10 @@ async function fixOrphans() {
       <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">{{ moveNote }}</span>
       <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="blockMode = false">退出停用</button>
     </div>
+    </Transition>
 
     <!-- 移动中：拿着什么，一眼可见 -->
+    <Transition name="notice">
     <div
       v-if="moveMode && (picked || pickedSlot)"
       class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
@@ -649,10 +662,13 @@ async function fixOrphans() {
       <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">{{ moveNote }}</span>
       <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="exitMove">退出移动</button>
     </div>
+    </Transition>
 
     <!-- 合并格：选一个主格，再点空格并进来；点共用卡解除 -->
+    <Transition name="notice" mode="out-in">
     <div
       v-if="mergeMode"
+      key="merge"
       class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
       style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
     >
@@ -674,6 +690,7 @@ async function fixOrphans() {
     <!-- 搬家结果 -->
     <div
       v-else-if="moveNote"
+      key="result"
       class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
       style="border-color: color-mix(in srgb, var(--accent) 45%, var(--line))"
     >
@@ -681,6 +698,7 @@ async function fixOrphans() {
       <span class="text-[13px]">{{ moveNote }}</span>
       <button class="icon-btn ml-auto !h-7 !w-7" title="关闭" @click="moveNote = null"><X :size="13" /></button>
     </div>
+    </Transition>
 
     <!-- 游离元件提示：布局缩容后超出网格 -->
     <div
@@ -712,7 +730,8 @@ async function fixOrphans() {
     <section
       v-for="zone in bins.layout.zone_count"
       :key="zone"
-      class="glass-panel rounded-3xl p-4 sm:p-6"
+      class="glass-panel shelf-reveal rounded-3xl p-4 sm:p-6"
+      :style="{ '--shelf-delay': Math.min(zone - 1, 4) * 45 + 'ms' }"
     >
       <div class="mb-4 flex items-end gap-3">
         <div class="flex flex-col">
@@ -755,11 +774,12 @@ async function fixOrphans() {
           </div>
 
           <div class="overflow-x-auto px-1 pt-2.5 pb-2">
-          <div
+          <TransitionGroup name="cell" tag="div" appear
             class="grid gap-2.5"
             :style="{ gridTemplateColumns: 'repeat(' + zoneCols(zone) + ', minmax(118px, 1fr))' }"
           >
-            <template v-for="cell in layerCells(zone, layer)" :key="cell.key">
+            <template v-for="cell in layerCells(zone, layer)"
+                      :key="cell.key + ':' + (cell.comp?.id ?? cell.kind)">
               <!-- 有料格子：可能是跨格大卡，也可能是附加格的共用卡 -->
               <BinCard
                 v-if="cell.kind === 'card' || cell.kind === 'shared'"
@@ -809,7 +829,7 @@ async function fixOrphans() {
                 <Plus :size="20" />
               </button>
             </template>
-          </div>
+          </TransitionGroup>
           </div>
         </div>
       </div>

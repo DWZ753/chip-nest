@@ -104,6 +104,7 @@ onBeforeUnmount(close)
     </button>
 
     <Teleport to="body">
+      <Transition name="popover">
       <div
         v-if="open"
         ref="panelEl"
@@ -129,6 +130,7 @@ onBeforeUnmount(close)
           无可选项
         </div>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>

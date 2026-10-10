@@ -15,6 +15,8 @@ import type {
 } from '../api/types'
 import { useConnectionStore } from '../stores/connection'
 import { useTheme } from '../stores/theme'
+import MotionTabs from './ui/motion_tabs.vue'
+import MotionPanel from './ui/motion_panel.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; reset: []; refresh: [] }>()
@@ -248,16 +250,18 @@ watch(() => props.open, (open) => {
 <template>
   <TransitionRoot :show="open" as="template">
     <Dialog as="div" class="relative z-50" @close="emit('close')">
-      <TransitionChild as="template" enter="duration-200 ease-out" enter-from="opacity-0"
-                       leave="duration-150 ease-in" leave-to="opacity-0">
+      <TransitionChild as="template" enter="dialog-backdrop-enter"
+                       enter-from="opacity-0" enter-to="opacity-100"
+                       leave="dialog-backdrop-leave" leave-to="opacity-0">
         <div class="fixed inset-0 bg-black/60 backdrop-blur-[6px]" />
       </TransitionChild>
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="duration-200 ease-out"
-                           enter-from="opacity-0 translate-y-3 scale-95"
-                           enter-to="opacity-100 translate-y-0 scale-100"
-                           leave="duration-150 ease-in" leave-to="opacity-0 translate-y-3 scale-95">
+          <TransitionChild as="template" enter="dialog-panel-enter"
+                           enter-from="dialog-panel-from"
+                           enter-to="dialog-panel-visible"
+                           leave="dialog-panel-leave"
+                           leave-to="dialog-panel-to">
             <DialogPanel class="glass-strong flex max-h-[88vh] w-full max-w-md flex-col rounded-2xl p-5">
               <div class="mb-4 flex items-center gap-2.5">
                 <Palette :size="17" style="color: var(--accent)" />
@@ -265,13 +269,10 @@ watch(() => props.open, (open) => {
                 <button class="icon-btn ml-auto !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
               </div>
 
-              <nav class="mb-4 flex flex-wrap gap-2" aria-label="设置分组">
-                <button v-for="tab in tabs" :key="tab.key" class="btn !py-1.5 text-xs"
-                        :class="active_tab === tab.key ? 'btn-primary' : 'btn-ghost'"
-                        :aria-pressed="active_tab === tab.key"
-                        @click="active_tab = tab.key">{{ tab.label }}</button>
-              </nav>
+              <MotionTabs v-model="active_tab" :tabs="tabs" label="设置分组" />
+              <MotionPanel>
               <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+                <div :key="active_tab" class="panel-reveal flex flex-col gap-4">
                 <div v-if="active_tab === 'appearance'" class="flex flex-col gap-4">
                 <!-- 外观 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
@@ -489,7 +490,9 @@ watch(() => props.open, (open) => {
                 </section>
 
                 </div>
+                </div>
               </div>
+              </MotionPanel>
 
               <div class="mt-5 flex justify-end">
                 <button class="btn btn-ghost" @click="emit('close')">关闭</button>

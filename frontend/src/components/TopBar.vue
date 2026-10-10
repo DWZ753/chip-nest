@@ -28,7 +28,7 @@ function onSearchEnter(event: KeyboardEvent) {
 
 <template>
   <header
-    class="glass-panel sticky top-3 z-40 mx-auto flex w-[min(1400px,calc(100%-24px))] items-center gap-3 rounded-2xl px-4 py-2.5"
+    class="glass-panel topbar-reveal sticky top-3 z-40 mx-auto flex w-[min(1400px,calc(100%-24px))] items-center gap-3 rounded-2xl px-4 py-2.5"
   >
     <!-- Logo -->
     <div class="flex items-center gap-2.5 pr-1">
@@ -90,9 +90,12 @@ function onSearchEnter(event: KeyboardEvent) {
           @click="bins.toggleSearchOption('useRegex')"
         >.*</button>
       </div>
+      <Transition name="popover">
       <div v-if="bins.searchError" class="absolute left-4 top-full mt-1 rounded-lg px-2 py-1 text-xs"
            style="color: var(--danger); background: var(--panel); border: 1px solid var(--danger)"
            role="status">{{ bins.searchError }}</div>
+      </Transition>
+      <Transition name="popover">
       <div v-if="bins.matchedIds !== null"
            class="absolute right-0 top-full mt-1 flex items-center gap-1 rounded-xl px-2 py-1 shadow-lg"
            style="background: var(--panel); border: 1px solid var(--line-strong)">
@@ -111,6 +114,7 @@ function onSearchEnter(event: KeyboardEvent) {
                 :disabled="bins.searchHitIds.length === 0"
                 @click="bins.navigateSearch(1)"><ChevronDown :size="15" /></button>
       </div>
+      </Transition>
     </div>
 
     <!-- 右侧操作 -->
@@ -120,8 +124,10 @@ function onSearchEnter(event: KeyboardEvent) {
         :title="dark ? '切换为浅色' : '切换为深色'"
         @click="toggle"
       >
-        <Sun v-if="dark" :size="18" />
-        <Moon v-else :size="18" />
+        <Transition name="theme-icon" mode="out-in">
+          <Sun v-if="dark" :size="18" />
+          <Moon v-else :size="18" />
+        </Transition>
       </button>
       <button
         class="icon-btn"

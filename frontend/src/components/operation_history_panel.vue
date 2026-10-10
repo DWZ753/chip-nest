@@ -64,7 +64,8 @@ onMounted(async () => {
 
 <template>
   <!-- 操作记录 -->
-  <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+  <section class="rounded-2xl p-4" :aria-busy="loading"
+           style="background: var(--panel); border: 1px solid var(--line)">
     <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
       <History :size="15" style="color: var(--accent-strong)" /> 操作记录
       <button class="btn ml-auto !py-1 text-[11.5px]" :disabled="undoBusy || !undoLabel"

@@ -238,8 +238,13 @@ const title = computed(() => {
         </span>
         <span v-if="comp.led_index !== null && !selectable"
               class="chip chip-led !px-1.5 !text-[9.5px]" title="灯带序号">LED{{ comp.led_index }}</span>
-        <span v-if="!selectable" class="chip qty-chip num !px-1.5 !text-[10px]"
-              title="当前库存">× {{ comp.quantity }}</span>
+        <span v-if="!selectable"
+              class="chip qty-chip num !px-1.5 !text-[10px]"
+              title="当前库存">
+          <Transition name="quantity" mode="out-in">
+            <span :key="comp.quantity">× {{ comp.quantity }}</span>
+          </Transition>
+        </span>
       </span>
     </div>
 

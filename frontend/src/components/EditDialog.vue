@@ -350,8 +350,9 @@ function close() {
   <TransitionRoot :show="open" as="template">
     <Dialog as="div" class="relative z-50" @close="close">
       <TransitionChild
-        as="template" enter="duration-200 ease-out" enter-from="opacity-0"
-        leave="duration-150 ease-in" leave-to="opacity-0"
+        as="template" enter="dialog-backdrop-enter"
+        enter-from="opacity-0" enter-to="opacity-100"
+        leave="dialog-backdrop-leave" leave-to="opacity-0"
       >
         <div class="fixed inset-0 bg-black/25 backdrop-blur-[3px]" />
       </TransitionChild>
@@ -359,10 +360,9 @@ function close() {
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
           <TransitionChild
-            as="template" enter="duration-200 ease-out"
-            enter-from="opacity-0 translate-y-3 scale-95"
-            enter-to="opacity-100 translate-y-0 scale-100"
-            leave="duration-150 ease-in" leave-to="opacity-0 translate-y-3 scale-95"
+            as="template" enter="dialog-panel-enter"
+            enter-from="dialog-panel-from" enter-to="dialog-panel-visible"
+            leave="dialog-panel-leave" leave-to="dialog-panel-to"
           >
             <DialogPanel
               class="glass-strong w-full max-w-md rounded-3xl p-5"
@@ -526,7 +526,14 @@ function close() {
                        :style="'background: var(--panel); border: 1px solid ' + urgency.border">
                     <div class="flex items-center gap-2">
                       <span class="text-xs font-semibold" style="color: var(--text-dim)">当前库存</span>
-                      <span class="num text-2xl font-black" :style="'color:' + urgency.color">{{ localQty }}</span>
+                      <span class="num min-w-[3ch] text-2xl font-black"
+                            :style="'color:' + urgency.color">
+                        <Transition name="quantity" mode="out-in">
+                          <span :key="localQty" class="inline-block">
+                            {{ localQty }}
+                          </span>
+                        </Transition>
+                      </span>
                       <span class="chip" :style="'color:' + urgency.color + '; border-color:' + urgency.border">
                         {{ urgency.text }}
                       </span>

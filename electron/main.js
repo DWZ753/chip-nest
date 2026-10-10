@@ -4,11 +4,12 @@
 // PyInstaller 把后端打成 exe（下方 spawn 分支预留：见 resolvePython）。
 'use strict';
 
-const { app, BrowserWindow } = require('electron');
-const { spawn } = require('node:child_process');
+const { app, BrowserWindow, dialog } = require('electron');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const net = require('node:net');
 
 const BACKEND_DIR = path.join(__dirname, '..', 'backend');
 const BACKEND_PORT = 8765;
@@ -49,6 +50,8 @@ function backendRuntimeEnv() {
   // 打包/便携运行时把数据与日志重定向到 userData（Program Files 不可写）
   env.CHIPNEST_DB = path.join(app.getPath('userData'), 'chipnest.db');
   env.CHIPNEST_LOG_DIR = path.join(app.getPath('userData'), 'logs');
+  env.CHIPNEST_PARENT_PID = String(process.pid);
+  env.CHIPNEST_PORT = String(BACKEND_PORT);
   if (app.isPackaged) {
     // 打包态：前端静态资源由后端 exe 托管（extraResources/frontend_dist）
     env.CHIPNEST_FRONTEND_DIST = path.join(process.resourcesPath, 'frontend_dist');
@@ -90,10 +93,24 @@ function startBackend() {
     console.error('[chipnest] 后端启动失败：', err.message,
                   '（打包版请确认 resources/backend/chipnest-backend.exe 存在；',
                   '开发版请确认 backend/.venv 已安装依赖）');
+    failApp('ChipNest 服务启动失败。', 1);
   });
   backendProc.on('exit', (code) => {
     console.error('[chipnest] 后端进程退出 code=', code);
-    if (!quitting) app.exit(1);
+    if (!quitting) failApp('ChipNest 服务已停止。', 1);
+  });
+}
+
+// 启动前检查端口，避免误连到残留服务后再退出。
+function checkBackendPort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', () => {
+      reject(new Error(`端口 ${BACKEND_PORT} 已被占用。`));
+    });
+    server.listen(BACKEND_PORT, '127.0.0.1', () => {
+      server.close(resolve);
+    });
   });
 }
 
@@ -181,13 +198,15 @@ async function createWindow() {
 
 // ---------- 生命周期 ----------
 app.whenReady().then(async () => {
-  startBackend();
+  if (!gotLock) return;
   try {
+    await checkBackendPort();
+    startBackend();
     await waitBackend(30000, 400);
     await createWindow();
   } catch (err) {
     console.error('[chipnest]', err.message);
-    app.exit(1);
+    failApp(err.message, 1);
   }
 
   app.on('activate', () => {
@@ -196,19 +215,29 @@ app.whenReady().then(async () => {
 });
 
 function failSmoke(code) {
-  try { app.exit(code); } catch { /* 忽略 */ }
-  setTimeout(() => process.exit(code), 800);
+  failApp('', code);
+}
+
+function failApp(message, code) {
+  quitting = true;
+  killBackendTree();
+  if (message && process.env.CHIPNEST_SMOKE !== '1') {
+    dialog.showErrorBox('ChipNest 启动失败', message);
+  }
+  app.exit(code);
 }
 
 // 退出前杀后端进程树（Windows：taskkill /T /F，含 uvicorn 子进程）
 function killBackendTree() {
   if (!backendProc || backendProc.pid === undefined) return;
+  const backend = backendProc;
+  backendProc = null;
   try {
     if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(backendProc.pid), '/T', '/F'],
-            { windowsHide: true, stdio: 'ignore' });
+      spawnSync('taskkill', ['/pid', String(backend.pid), '/T', '/F'],
+                { windowsHide: true, stdio: 'ignore', timeout: 5000 });
     } else {
-      backendProc.kill('SIGTERM');
+      backend.kill('SIGTERM');
     }
   } catch { /* 进程已消失则忽略 */ }
 }

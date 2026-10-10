@@ -15,7 +15,7 @@ import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
 
 const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; afterLeave: [] }>()
 
 const bins = useBinsStore()
 
@@ -164,18 +164,21 @@ watch(() => props.open, (v) => { if (v) setupRows() })
 </script>
 
 <template>
-  <TransitionRoot :show="open && !picker.active" as="template">
+  <TransitionRoot :show="open && !picker.active" as="template"
+                  @after-leave="emit('afterLeave')">
     <Dialog as="div" class="relative z-50" @close="close">
-      <TransitionChild as="template" enter="duration-200 ease-out" enter-from="opacity-0"
-                       leave="duration-150 ease-in" leave-to="opacity-0">
+      <TransitionChild as="template" enter="dialog-backdrop-enter"
+                       enter-from="opacity-0" enter-to="opacity-100"
+                       leave="dialog-backdrop-leave" leave-to="opacity-0">
         <div class="fixed inset-0 bg-black/60 backdrop-blur-[6px]" />
       </TransitionChild>
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="duration-200 ease-out"
-                           enter-from="opacity-0 translate-y-3 scale-95"
-                           enter-to="opacity-100 translate-y-0 scale-100"
-                           leave="duration-150 ease-in" leave-to="opacity-0 translate-y-3 scale-95">
+          <TransitionChild as="template" enter="dialog-panel-enter"
+                           enter-from="dialog-panel-from"
+                           enter-to="dialog-panel-visible"
+                           leave="dialog-panel-leave"
+                           leave-to="dialog-panel-to">
             <DialogPanel class="glass-strong flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl p-5">
               <div class="mb-3 flex items-center gap-2.5">
                 <PackagePlus :size="17" style="color: var(--accent)" />
