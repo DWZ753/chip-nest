@@ -15,6 +15,7 @@ import GuideOverlay from './components/GuideOverlay.vue'
 
 const bins = useBinsStore()
 const connection = useConnectionStore()
+const gridView = ref<InstanceType<typeof GridView> | null>(null)
 
 const editOpen = ref(false)
 const editComp = ref<ComponentItem | null>(null)
@@ -64,6 +65,11 @@ function openManual() {
   manualOpen.value = true
 }
 
+function closeManual() {
+  manualOpen.value = false
+  bomOpen.value = true
+}
+
 // 一键清空之后：收掉引导/BOM 弹窗，清检索词并重拉整个网格
 async function afterWipe() {
   guideOpen.value = false
@@ -100,7 +106,8 @@ async function retry() {
         <button class="btn btn-primary mt-5" @click="retry">重试</button>
       </div>
 
-      <GridView v-else @edit="editComponent" @create="createComponent" />
+      <GridView v-else ref="gridView"
+                @edit="editComponent" @create="createComponent" />
     </main>
 
     <!-- 对话框 -->
@@ -111,6 +118,7 @@ async function retry() {
       :create-pos="createPos"
       :layout="bins.layout"
       @close="editOpen = false"
+      @locate-primary="gridView?.locatePrimary($event)"
     />
     <BomDialog
       :open="bomOpen"
@@ -122,7 +130,7 @@ async function retry() {
       :open="layoutOpen"
       @close="layoutOpen = false"
     />
-    <ManualStockDialog :open="manualOpen" @close="manualOpen = false" />
+    <ManualStockDialog :open="manualOpen" @close="closeManual" />
     <AppSettingsDialog
       :open="settingsOpen"
       @close="settingsOpen = false"

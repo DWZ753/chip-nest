@@ -4,13 +4,13 @@ import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
 import {
-  DatabaseZap, FileUp, Lamp, Link2, ListOrdered, Layers, MonitorCog, Moon, Palette, Sun,
+  FileUp, Lamp, Link2, ListOrdered, MonitorCog, Moon, Palette, Sun,
   Download, Trash2, X,
 } from '@lucide/vue'
 
 import { api } from '../api/client'
 import type {
-  BackupResult, BackupSnapshot, DataSummary, MergeGroup, ResetResult,
+  BackupResult, BackupSnapshot, DataSummary, ResetResult,
   RestoreResult,
 } from '../api/types'
 import { useConnectionStore } from '../stores/connection'
@@ -22,6 +22,15 @@ const connection = useConnectionStore()
 const {
   dark, setLight, fontScale, setFontScale, FONT_STEPS, mergeSlots, setMergeSlots,
 } = useTheme()
+const active_tab = ref('appearance')
+const tabs = [
+  { key: 'appearance', label: '外观' },
+  { key: 'hardware', label: '硬件' },
+  { key: 'backup', label: '备份与恢复' },
+  { key: 'cleanup', label: '数据清理' },
+  { key: 'about', label: '关于' },
+]
+
 const SCALE_LABELS = ['小', '中', '大', '特大']
 
 const MODE_TEXT = {
@@ -50,37 +59,6 @@ async function reindexLeds() {
   } finally {
     ledBusy.value = false
   }
-}
-
-// ---- 合并重复元件（同名 + 同标称值 + 同封装）----
-const mergeBusy = ref(false)
-const mergeGroups = ref<MergeGroup[]>([])
-const mergeNote = ref<string | null>(null)
-
-async function previewMerge() {
-  mergeBusy.value = true
-  mergeNote.value = null
-  mergeGroups.value = []
-  try {
-    const res = await api.mergeDuplicates(true)
-    mergeGroups.value = res.groups
-    if (!res.groups.length) mergeNote.value = '没有可合并的重复元件'
-  } catch (e) {
-    mergeNote.value = e instanceof Error ? e.message : String(e)
-  } finally { mergeBusy.value = false }
-}
-
-async function applyMerge() {
-  mergeBusy.value = true
-  try {
-    const res = await api.mergeDuplicates(false)
-    mergeGroups.value = []
-    mergeNote.value = `已合并 ${res.merged_groups} 组、${res.merged_components} 条`
-    await loadSummary()
-    emit('refresh')
-  } catch (e) {
-    mergeNote.value = e instanceof Error ? e.message : String(e)
-  } finally { mergeBusy.value = false }
 }
 
 // ---- 清空所有数据 ----
@@ -248,6 +226,7 @@ async function doRestore() {
 // 打开时取一次概况（决定按钮能不能点）；关上则收起确认态与上次的结果提示
 watch(() => props.open, (open) => {
   if (open) {
+    active_tab.value = 'appearance'
     void loadSummary()
     return
   }
@@ -286,7 +265,14 @@ watch(() => props.open, (open) => {
                 <button class="icon-btn ml-auto !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
               </div>
 
+              <nav class="mb-4 flex flex-wrap gap-2" aria-label="设置分组">
+                <button v-for="tab in tabs" :key="tab.key" class="btn !py-1.5 text-xs"
+                        :class="active_tab === tab.key ? 'btn-primary' : 'btn-ghost'"
+                        :aria-pressed="active_tab === tab.key"
+                        @click="active_tab = tab.key">{{ tab.label }}</button>
+              </nav>
               <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+                <div v-if="active_tab === 'appearance'" class="flex flex-col gap-4">
                 <!-- 外观 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">
@@ -343,15 +329,8 @@ watch(() => props.open, (open) => {
                   </div>
                 </section>
 
-                <!-- 版本 -->
-                <section class="flex items-center justify-between rounded-2xl px-4 py-3 text-[12.5px]"
-                         style="background: var(--panel); border: 1px solid var(--line)">
-                  <span class="font-bold">版本</span>
-                  <span class="mono font-bold" style="color: var(--accent)">
-                    {{ connection.version ? 'v' + connection.version : '—' }}
-                  </span>
-                </section>
-
+                </div>
+                <div v-else-if="active_tab === 'hardware'" class="flex flex-col gap-4">
                 <!-- 硬件状态 -->
                 <section class="rounded-2xl px-4 py-3 text-[12.5px]"
                          style="background: var(--panel); border: 1px solid var(--line)">
@@ -380,42 +359,10 @@ watch(() => props.open, (open) => {
                   <div v-if="ledError" class="mt-2 text-[12px] font-semibold" style="color: var(--danger)">{{ ledError }}</div>
                 </section>
 
-                <!-- 重复元件合并 -->
-                <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
-                  <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
-                    <Layers :size="15" style="color: var(--accent-strong)" /> 重复元件
-                  </div>
-                  <button class="btn !py-1.5 text-xs"
-                          :disabled="mergeBusy || !summary || summary.components < 2"
-                          @click="previewMerge">合并重复元件</button>
-
-                  <div v-if="mergeGroups.length" class="mt-2 flex flex-col gap-1">
-                    <div v-for="g in mergeGroups" :key="g.keep_id"
-                         class="flex items-center gap-2 text-[11.5px]">
-                      <span class="truncate font-semibold">{{ g.name }}</span>
-                      <span class="mono" style="color: var(--text-dim)">{{ g.value }} {{ g.package }}</span>
-                      <span class="num ml-auto" style="color: var(--text-faint)">
-                        {{ g.member_ids.length }} 条 · 合计 {{ g.total_quantity }}
-                      </span>
-                    </div>
-                    <div class="mt-2 flex items-center gap-2">
-                      <button class="btn btn-danger !py-1.5 text-xs" :disabled="mergeBusy" @click="applyMerge">
-                        确认合并
-                      </button>
-                      <button class="btn btn-ghost !py-1.5 text-xs" @click="mergeGroups = []">取消</button>
-                    </div>
-                  </div>
-                  <div v-else-if="mergeNote" class="mt-2 text-[12px] font-semibold"
-                       style="color: var(--text-dim)">{{ mergeNote }}</div>
-                </section>
-
-                <!-- 数据：一键清空回到干净初始状态 -->
-                <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
-                  <div class="mb-2 flex items-center gap-2 text-[13px] font-extrabold">
-                    <DatabaseZap :size="15" style="color: var(--danger)" /> 数据
-                  </div>
-
-                  <div class="mb-4 border-b pb-4" style="border-color: var(--line)">
+                </div>
+                <section v-else-if="active_tab === 'backup'" class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                  <h3 class="mb-3 text-[13px] font-extrabold">备份与恢复</h3>
+                  <div class="pb-4">
                     <button class="btn !py-1.5 text-xs"
                             :disabled="backupBusy || busy || restoreBusy"
                             @click="createBackup">
@@ -441,49 +388,6 @@ watch(() => props.open, (open) => {
                     <div v-if="backupError" class="mt-2 text-[11.5px] font-bold"
                          style="color: var(--danger)">{{ backupError }}</div>
                   </div>
-
-                  <template v-if="!confirming">
-                    <button class="btn btn-danger"
-                            :disabled="!canWipe || backupBusy || restoreBusy"
-                            @click="startConfirm">
-                      <Trash2 :size="14" class="mr-1 inline" />清空所有数据
-                    </button>
-
-                    <div v-if="wiped" class="mt-3 rounded-xl px-3 py-2 text-[12px] leading-relaxed"
-                         style="background: var(--surface-2); border: 1px solid var(--line)">
-                      <div class="font-bold" style="color: var(--success)">
-                        已清空：删除 {{ wiped.deleted_components }} 个元件、{{ wiped.deleted_transactions }} 条操作流水{{ wiped.layout_reset ? '，布局回到初始状态' : '' }}
-                      </div>
-                      <div class="mt-1" style="color: var(--text-dim)">备份文件：</div>
-                      <div class="mono mt-0.5 break-all" style="color: var(--text-faint)">{{ wiped.backup_path }}</div>
-                    </div>
-                  </template>
-
-                  <template v-else>
-                    <div class="rounded-xl p-3 text-[12px] leading-relaxed"
-                         style="background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.34)">
-                      <div class="font-bold" style="color: var(--danger)">清空不可撤销，会先自动备份</div>
-                      <div class="mt-1" style="color: var(--text-dim)">
-                        将删除 {{ summary?.components ?? 0 }} 个元件、{{ summary?.transactions ?? 0 }} 条操作流水。
-                      </div>
-                      <label class="mt-2 flex cursor-pointer items-start gap-2" style="color: var(--text-dim)">
-                        <input v-model="resetLayout" type="checkbox" style="accent-color: var(--danger)" />
-                        <span>同时把仓库布局恢复为 1 区 × 3 层 × 1 行 4 列</span>
-                      </label>
-                      <div class="field-label mt-3">确认词</div>
-                      <input v-model="confirmText" class="input mt-1.5" :placeholder="CONFIRM_WORD"
-                             maxlength="4" @keyup.enter="doReset" />
-                      <div v-if="resetError" class="mt-2 font-bold" style="color: var(--danger)">{{ resetError }}</div>
-                      <div class="mt-3 flex items-center gap-2">
-                        <button class="btn btn-danger"
-                                :disabled="!canConfirm || backupBusy || restoreBusy"
-                                @click="doReset">
-                          {{ busy ? '正在清空…' : '确认清空' }}
-                        </button>
-                        <button class="btn btn-ghost" :disabled="busy" @click="cancelConfirm">取消</button>
-                      </div>
-                    </div>
-                  </template>
 
                   <div class="mt-4 border-t pt-4" style="border-color: var(--line)">
                     <div class="mb-2 text-[12.5px] font-bold">恢复备份</div>
@@ -528,6 +432,63 @@ watch(() => props.open, (open) => {
                             @click="startRestoreConfirm">恢复备份</button>
                   </div>
                 </section>
+                <section v-else-if="active_tab === 'cleanup'" class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                  <h3 class="mb-3 text-[13px] font-extrabold" style="color: var(--danger)">数据清理</h3>
+                  <template v-if="!confirming">
+                    <button class="btn btn-danger"
+                            :disabled="!canWipe || backupBusy || restoreBusy"
+                            @click="startConfirm">
+                      <Trash2 :size="14" class="mr-1 inline" />清空所有数据
+                    </button>
+
+                    <div v-if="wiped" class="mt-3 rounded-xl px-3 py-2 text-[12px] leading-relaxed"
+                         style="background: var(--surface-2); border: 1px solid var(--line)">
+                      <div class="font-bold" style="color: var(--success)">
+                        已清空：删除 {{ wiped.deleted_components }} 个元件、{{ wiped.deleted_transactions }} 条操作流水{{ wiped.layout_reset ? '，布局回到初始状态' : '' }}
+                      </div>
+                      <div class="mt-1" style="color: var(--text-dim)">备份文件：</div>
+                      <div class="mono mt-0.5 break-all" style="color: var(--text-faint)">{{ wiped.backup_path }}</div>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="rounded-xl p-3 text-[12px] leading-relaxed"
+                         style="background: rgba(255, 92, 122, 0.08); border: 1px solid rgba(255, 92, 122, 0.34)">
+                      <div class="font-bold" style="color: var(--danger)">清空不可撤销，会先自动备份</div>
+                      <div class="mt-1" style="color: var(--text-dim)">
+                        将删除 {{ summary?.components ?? 0 }} 个元件、{{ summary?.transactions ?? 0 }} 条操作流水。
+                      </div>
+                      <label class="mt-2 flex cursor-pointer items-start gap-2" style="color: var(--text-dim)">
+                        <input v-model="resetLayout" type="checkbox" style="accent-color: var(--danger)" />
+                        <span>同时把仓库布局恢复为 1 区 × 3 层 × 1 行 4 列</span>
+                      </label>
+                      <div class="field-label mt-3">确认词</div>
+                      <input v-model="confirmText" class="input mt-1.5" :placeholder="CONFIRM_WORD"
+                             maxlength="4" @keyup.enter="doReset" />
+                      <div v-if="resetError" class="mt-2 font-bold" style="color: var(--danger)">{{ resetError }}</div>
+                      <div class="mt-3 flex items-center gap-2">
+                        <button class="btn btn-danger"
+                                :disabled="!canConfirm || backupBusy || restoreBusy"
+                                @click="doReset">
+                          {{ busy ? '正在清空…' : '确认清空' }}
+                        </button>
+                        <button class="btn btn-ghost" :disabled="busy" @click="cancelConfirm">取消</button>
+                      </div>
+                    </div>
+                  </template>
+
+                </section>
+                <div v-else>
+                <!-- 版本 -->
+                <section class="flex items-center justify-between rounded-2xl px-4 py-3 text-[12.5px]"
+                         style="background: var(--panel); border: 1px solid var(--line)">
+                  <span class="font-bold">版本</span>
+                  <span class="mono font-bold" style="color: var(--accent)">
+                    {{ connection.version ? 'v' + connection.version : '—' }}
+                  </span>
+                </section>
+
+                </div>
               </div>
 
               <div class="mt-5 flex justify-end">

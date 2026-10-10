@@ -21,10 +21,24 @@ const props = defineProps<{
   layout: LayoutConfig
 }>()
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; locatePrimary: [number] }>()
 const bins = useBinsStore()
 
 const isCreate = computed(() => props.comp === null)
+const primaryComponent = computed(() =>
+  bins.components.find((comp) => comp.id === props.comp?.id) ?? props.comp)
+const isShared = computed(() => {
+  const comp = primaryComponent.value
+  const pos = props.editPos
+  return !!comp && !!pos && (comp.zone !== pos.zone
+    || comp.layer !== pos.layer || comp.slot !== pos.slot)
+})
+
+function locatePrimary() {
+  if (!primaryComponent.value) return
+  close()
+  emit('locatePrimary', primaryComponent.value.id)
+}
 
 const form = reactive({
   name: '',
@@ -372,6 +386,16 @@ function close() {
               </div>
 
               <div class="flex flex-col gap-3.5">
+                <section v-if="isShared && primaryComponent"
+                         class="flex items-center gap-2 text-[12px]">
+                  <span class="chip">
+                    主格 {{ primaryComponent.zone }}区 /
+                    {{ primaryComponent.layer }}层 /
+                    {{ primaryComponent.slot }}格
+                  </span>
+                  <button class="btn btn-ghost ml-auto !py-1.5 text-xs"
+                          @click="locatePrimary">定位主格</button>
+                </section>
                 <!-- 联网识别：认料号/描述，填下面的栏位（离线也能手工填） -->
                 <section class="rounded-2xl p-3" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="flex items-center gap-2">

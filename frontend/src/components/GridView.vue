@@ -4,7 +4,6 @@ import {
   Ban, Check, Combine, Crosshair, Move, Pencil, Plus, Trash2, TriangleAlert, X,
 } from '@lucide/vue'
 
-import { api } from '../api/client'
 import type { ComponentItem } from '../api/types'
 import {
   positionKey, useBinsStore, zoneGrid, zoneLayers, zoneName, type BinPosition,
@@ -137,26 +136,6 @@ function onCard(comp: ComponentItem, isShared = false, pos?: BinPosition) {
   emit('edit', comp, pos ?? comp)
 }
 
-const confirmClearSupplier = ref(false)
-let clearTimer: ReturnType<typeof setTimeout> | undefined
-
-async function clearSupplierParts() {
-  if (!confirmClearSupplier.value) {
-    confirmClearSupplier.value = true
-    window.clearTimeout(clearTimer)
-    clearTimer = window.setTimeout(() => { confirmClearSupplier.value = false }, 3500)
-    return
-  }
-  window.clearTimeout(clearTimer)
-  for (const id of selectedIds.value) {
-    const updated = await api.patchComponent(id, { supplier_part: '' })
-    bins.upsert(updated)          // 立即更新本地状态
-  }
-  confirmClearSupplier.value = false
-  await bins.refreshAll()         // 再与后端对齐一次
-  exitBatch()
-}
-
 async function deleteSelected() {
   if (deleteBusy.value) return
   if (!confirmDelete.value) {
@@ -181,6 +160,29 @@ async function deleteSelected() {
 const bins = useBinsStore()
 const picker = usePickerStore()
 const { mergeSlots: mergeView } = useTheme()
+const locatedPrimaryId = ref<number | null>(null)
+let primaryTimer: ReturnType<typeof setTimeout> | undefined
+
+/** 定位元件当前的主格，仅调整页面滚动和高亮。 */
+async function locatePrimary(id: number) {
+  await nextTick()
+  const target = rootEl.value?.querySelector<HTMLElement>(
+    `[data-primary-component-id="${id}"]`,
+  )
+  if (!target) {
+    flashNote('主格不在当前布局')
+    return
+  }
+  locatedPrimaryId.value = id
+  window.clearTimeout(primaryTimer)
+  primaryTimer = window.setTimeout(() => {
+    locatedPrimaryId.value = null
+  }, 2500)
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+onBeforeUnmount(() => window.clearTimeout(primaryTimer))
+defineExpose({ locatePrimary })
 
 watch(() => bins.searchNavigationTick, async () => {
   await nextTick()
@@ -582,10 +584,6 @@ async function fixOrphans() {
         <button class="btn btn-danger !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="deleteSelected">
           <Trash2 :size="13" /> {{ confirmDelete ? '确认删除？' : '删除所选' }}
         </button>
-        <button class="btn !py-1.5 text-xs" :disabled="selectedIds.size === 0"
-                title="清空所选元件的供应商料号" @click="clearSupplierParts">
-          {{ confirmClearSupplier ? '确认清空？' : '清除供应商料号' }}
-        </button>
         <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
       </template>
       <template v-else>
@@ -770,9 +768,12 @@ async function fixOrphans() {
                 :col-span="cell.colSpan"
                 :row-span="cell.rowSpan"
                 :shared="cell.kind === 'shared'"
+                :primary="positionKey(cell.pos) === positionKey(cell.comp!)"
                 :dimmed="!!bins.matchedIds && !bins.matchedIds.has(cell.comp!.id)"
                 :current="bins.currentSearchId === cell.comp!.id"
-                :flashing="!!bins.flashKeys[positionKey(cell.pos)]"
+                :flashing="!!bins.flashKeys[positionKey(cell.pos)]
+                  || (locatedPrimaryId === cell.comp!.id
+                    && positionKey(cell.pos) === positionKey(cell.comp!))"
                 :guide="bins.guideKey === positionKey(cell.pos)"
                 :selectable="batchMode"
                 :selected="batchMode && selectedPositions.has(positionKey(cell.pos))"
@@ -780,6 +781,7 @@ async function fixOrphans() {
                 :picked="cell.kind === 'shared' ? isSlotHeld(cell) : heldId === cell.comp!.id"
                 :swap-ready="!pickedSlot && !!picked && pickedId !== cell.comp!.id"
                 @click="onCard($event, cell.kind === 'shared', cell.pos)"
+                @locate-primary="locatePrimary"
               />
               <!-- 不可用格：坏掉的格子，任何模式都不会往里放东西 -->
               <div

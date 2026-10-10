@@ -27,9 +27,14 @@ const props = defineProps<{
   current?: boolean
   /** 共用卡：这一格是某个物料的附加占用格 */
   shared?: boolean
+  /** 本卡包含主格，副格卡可定位到它 */
+  primary?: boolean
 }>()
 
-const emit = defineEmits<{ click: [ComponentItem] }>()
+const emit = defineEmits<{
+  click: [ComponentItem]
+  locatePrimary: [number]
+}>()
 
 const FIELD_ORDER = ['value', 'package', 'mpn', 'supplier']
 const FIELD_LABEL: Record<string, string> = {
@@ -207,6 +212,7 @@ const title = computed(() => {
     ref="rootEl"
     class="bin-card group"
     :data-component-id="comp.id"
+    :data-primary-component-id="primary ? comp.id : undefined"
     :class="{ 'search-hit': flashing, 'guide-now': guide,
               'card-selected': selected,
               'has-supplier': showSupplier && !!comp.supplier_part,
@@ -238,10 +244,16 @@ const title = computed(() => {
     </div>
 
     <!-- 共用卡：这一格是同一物料的附加存放格 -->
-    <div v-if="shared" class="mt-0.5 flex items-center gap-1">
-      <Link2 :size="11" style="color: var(--text-faint)" />
-      <span class="chip !px-1.5 !text-[9.5px]" style="color: var(--text-dim)">共用</span>
-    </div>
+    <button v-if="shared || primary === false" type="button"
+            class="chip mt-0.5 max-w-full self-start !text-[9.5px]"
+            style="color: var(--text-dim)" title="定位主格"
+            @click.stop="emit('locatePrimary', comp.id)"
+            @keydown.enter.stop @keydown.space.stop>
+      <Link2 :size="11" class="mr-1 shrink-0" />
+      <span class="truncate">
+        主格 {{ comp.zone }}区/{{ comp.layer }}层/{{ comp.slot }}格
+      </span>
+    </button>
 
     <!-- 统一显示链：字段与标签同一序列，单行自适应，放不下折叠为 +N -->
     <div v-if="!shared && chips.length" ref="chipsRow" class="chips-row mt-0.5 flex flex-wrap items-center overflow-hidden">

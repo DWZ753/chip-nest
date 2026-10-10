@@ -13,6 +13,8 @@ import type { BomParseOut, BomPlan, BomStep } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
 import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
+import InventoryMaintenancePanel from './inventory_maintenance_panel.vue'
+import OperationHistoryPanel from './operation_history_panel.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; manual: []; start: [BomStep[]] }>()
@@ -28,6 +30,18 @@ const selections = ref<Record<number, number>>({})
 const busy = ref(false)
 const errorMsg = ref<string | null>(null)
 const view = ref<'work' | 'import'>('work')
+const active_tab = ref('intake')
+const tabs = [
+  { key: 'intake', label: '入库' },
+  { key: 'pick', label: 'BOM 取料' },
+  { key: 'maintenance', label: '元件整理' },
+  { key: 'history', label: '操作记录' },
+]
+
+function switch_tab(key: string) {
+  active_tab.value = key
+  view.value = 'work'
+}
 
 interface RowEdit {
   key: number
@@ -56,6 +70,7 @@ watch(
   () => props.open,
   (v) => {
     if (!v) return
+    active_tab.value = 'intake'
     text.value = ''
     fileName.value = ''
     parsed.value = null
@@ -316,17 +331,36 @@ const canStart = computed(() => !busy.value && !!plan.value
             <DialogPanel class="glass-strong flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl p-5">
               <div class="mb-3 flex items-center gap-2.5">
                 <DialogTitle class="text-base font-extrabold tracking-wide">库存</DialogTitle>
-                <button class="btn ml-auto !px-3 !py-1.5 text-xs" @click="emit('manual')">
+                <button v-if="active_tab === 'intake'"
+                        class="btn ml-auto !px-3 !py-1.5 text-xs"
+                        @click="emit('manual')">
                   <ListPlus :size="14" /> 手工入库
                 </button>
-                <button class="icon-btn !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
+                <button class="icon-btn !h-8 !w-8"
+                        :class="active_tab === 'intake' ? '' : 'ml-auto'"
+                        @click="emit('close')"><X :size="16" /></button>
               </div>
 
+              <nav class="mb-4 flex flex-wrap gap-2" aria-label="库存分组">
+                <button v-for="tab in tabs" :key="tab.key"
+                        class="btn !py-1.5 text-xs"
+                        :class="active_tab === tab.key
+                          ? 'btn-primary' : 'btn-ghost'"
+                        :aria-pressed="active_tab === tab.key"
+                        :disabled="busy || idBusy"
+                        @click="switch_tab(tab.key)">{{ tab.label }}</button>
+              </nav>
+              <InventoryMaintenancePanel
+                v-if="active_tab === 'maintenance'" />
+              <OperationHistoryPanel v-else-if="active_tab === 'history'" />
               <!-- ========== 工作区：粘贴文本 / xlsx 文件 ========== -->
-              <div v-if="view === 'work'" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+              <div v-else-if="view === 'work'" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+                <h3 class="text-[13px] font-extrabold">
+                  {{ active_tab === 'intake' ? 'BOM 入库' : 'BOM 取料' }}
+                </h3>
                 <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <textarea v-model="text" class="textarea mono !min-h-[96px] text-[12.5px]" spellcheck="false"
-                            placeholder="粘贴 BOM 文本：每行一件，如 10k电阻 x20 / 100nF电容 0805 20个 / LED 5pcs；或直接选择下方的 .xlsx / .csv / .txt 文件" />
+                            placeholder="BOM 内容" />
                   <div class="flex flex-col gap-2">
                     <label class="btn !justify-start border-dashed" :class="{ '!border-[var(--accent)]': busy }">
                       <FileUp :size="15" /> {{ busy ? '解析中…' : '选择 BOM 文件' }}
@@ -350,10 +384,12 @@ const canStart = computed(() => !busy.value && !!plan.value
                     <span v-if="fileName" class="mono">（{{ fileName }}）</span>
                   </span>
                   <div class="flex-1" />
-                  <button class="btn" :disabled="!parsed || busy" @click="runPlan">
+                  <button v-if="active_tab === 'pick'" class="btn"
+                          :disabled="!parsed || busy" @click="runPlan">
                     <Play :size="15" /> 匹配库存并规划
                   </button>
-                  <button class="btn btn-primary" :disabled="!parsed || busy" @click="openImportList">
+                  <button v-else class="btn btn-primary"
+                          :disabled="!parsed || busy" @click="openImportList">
                     <ListPlus :size="15" /> 整表入库
                   </button>
                 </div>
@@ -388,7 +424,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                 </div>
 
                 <!-- 规划结果 -->
-                <template v-if="plan">
+                <template v-if="plan && active_tab === 'pick'">
                   <div v-if="plan.choices.length" class="fade-up rounded-xl px-4 py-3"
                        style="border: 1px solid var(--line-strong); background: var(--panel)">
                     <div class="mb-2 text-[13px] font-extrabold" style="color: var(--warn)">
@@ -487,8 +523,8 @@ const canStart = computed(() => !busy.value && !!plan.value
                   </div>
                 </template>
 
-                <div v-if="plan" class="mt-1 flex items-center gap-2">
-                  <span class="text-[11px]" style="color: var(--text-faint)">引导时每步自动出库并记入操作流水</span>
+                <div v-if="plan && active_tab === 'pick'"
+                     class="mt-1 flex items-center gap-2">
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="emit('close')">关闭</button>
                   <button class="btn btn-primary" :disabled="!canStart" @click="plan && emit('start', plan.steps)">
