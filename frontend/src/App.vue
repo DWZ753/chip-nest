@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import type { BomStep, ComponentItem } from './api/types'
+import type { BomStep, ComponentItem, BomProject } from './api/types'
 import { useBinsStore, type BinPosition } from './stores/bins'
 import { useConnectionStore } from './stores/connection'
 import TopBar from './components/TopBar.vue'
@@ -28,6 +28,7 @@ const pending_dialog = ref<'manual' | 'inventory' | null>(null)
 const settingsOpen = ref(false)
 const guideOpen = ref(false)
 const guideSteps = ref<BomStep[]>([])
+const guideProject = ref<BomProject | null>(null)
 const fatal = ref<string | null>(null)
 
 onMounted(async () => {
@@ -54,10 +55,11 @@ function createComponent(pos: BinPosition) {
   editOpen.value = true
 }
 
-function startGuide(steps: BomStep[]) {
+function startGuide(steps: BomStep[], project?: BomProject) {
   if (!steps.length) return
   bomOpen.value = false
   guideSteps.value = steps
+  guideProject.value = project ?? null
   guideOpen.value = true
 }
 
@@ -151,6 +153,7 @@ async function retry() {
     <GuideOverlay
       :open="guideOpen"
       :steps="guideSteps"
+      :project="guideProject"
       @close="guideOpen = false"
       @finished="refreshAfterGuide"
     />

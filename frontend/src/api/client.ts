@@ -3,6 +3,8 @@ import type {
   AdapterStatus, BackupSnapshot, BlockedSlot, BomLineOut, BomParseOut, BomPlan, ComponentItem, DataSummary, LayoutConfig,
   LookupCandidate, LookupResult, MergeResult, ReindexResult, ResetResult, RestoreResult, SearchIds, SwapOut,
   BackupResult, TransactionRow, UndoOut, UndoPeek,
+  BackupSettings, BackupFile, BomProject, ProjectSave,
+  Replenishment, StocktakeEntry,
 } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
@@ -104,9 +106,10 @@ export const api = {
     request<ComponentItem>(`/api/v1/components/${id}/slots` + qs({ ...pos }), { method: 'DELETE' }),
 
   // 合并「同名同值同封装」的重复元件（dryRun=1 只预览）
-  mergeDuplicates: (dryRun = false) =>
+  mergeDuplicates: (dryRun = false, groups?: Record<number, string>) =>
     request<MergeResult>('/api/v1/system/merge-duplicates' + qs({ dry_run: dryRun ? 'true' : '' }), {
       method: 'POST',
+      body: groups === undefined ? undefined : JSON.stringify({ groups }),
     }),
 
   // 两个格子互换内容（位置与灯号对调）
@@ -184,6 +187,42 @@ export const api = {
   restoreData: (payload: { confirm: string; backup: BackupSnapshot }) =>
     request<RestoreResult>('/api/v1/system/restore', {
       method: 'POST', body: JSON.stringify(payload),
+    }),
+
+  backupSettings: () =>
+    request<BackupSettings>('/api/v1/system/backup-settings'),
+  saveBackupSettings: (payload: Pick<BackupSettings,
+    'enabled' | 'interval_hours' | 'keep_count' | 'directory'>) =>
+    request<BackupSettings>('/api/v1/system/backup-settings', {
+      method: 'PUT', body: JSON.stringify(payload),
+    }),
+  listBackups: () => request<BackupFile[]>('/api/v1/system/backups'),
+  getBackup: (name: string) => request<BackupSnapshot>(
+    '/api/v1/system/backups/' + encodeURIComponent(name)),
+  deleteBackup: (name: string) => request<{ ok: boolean }>(
+    '/api/v1/system/backups/' + encodeURIComponent(name), { method: 'DELETE' }),
+  stocktake: (entries: StocktakeEntry[], note: string) =>
+    request<{ changed: number; components: ComponentItem[] }>(
+      '/api/v1/inventory/stocktake', {
+        method: 'POST', body: JSON.stringify({ entries, note }),
+      }),
+  listProjects: () => request<BomProject[]>('/api/v1/bom/projects'),
+  getProject: (id: number) =>
+    request<BomProject>(`/api/v1/bom/projects/${id}`),
+  saveProject: (payload: ProjectSave, id?: number) =>
+    request<BomProject>('/api/v1/bom/projects' + (id ? `/${id}` : ''), {
+      method: id ? 'PUT' : 'POST', body: JSON.stringify(payload),
+    }),
+  deleteProject: (id: number) => request<{ ok: boolean }>(
+    `/api/v1/bom/projects/${id}`, { method: 'DELETE' }),
+  pickProject: (id: number, cursor: number, revision: number) =>
+    request<{ component: ComponentItem; project: BomProject }>(
+      `/api/v1/bom/projects/${id}/pick`, {
+        method: 'POST', body: JSON.stringify({ cursor, revision }),
+      }),
+  replenish: (project_ids: number[], include_thresholds: boolean) =>
+    request<Replenishment>('/api/v1/inventory/replenishment', {
+      method: 'POST', body: JSON.stringify({ project_ids, include_thresholds }),
     }),
 
   // 审计 / 系统（M4）

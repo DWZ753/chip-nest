@@ -47,6 +47,8 @@ const kindLabel: Record<string, { text: string; color: string }> = {
   adjust: { text: '修改', color: 'var(--info)' },
   delete: { text: '删除', color: 'var(--danger)' },
   backup: { text: '备份', color: 'var(--info)' },
+  stocktake: { text: '盘点', color: 'var(--info)' },
+  project: { text: '项目', color: 'var(--accent-strong)' },
 }
 
 onMounted(async () => {

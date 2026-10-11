@@ -1,6 +1,8 @@
 """ChipNest FastAPI 入口：启动即自动跑迁移并种入默认布局。"""
 
 from contextlib import asynccontextmanager
+import asyncio
+from contextlib import suppress
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -13,7 +15,11 @@ from app import config, log
 from app.hal.manager import get_manager
 from app.db import async_session, engine, upgrade_legacy_columns
 from app.models import DEFAULT_LAYOUT, Base, LayoutConfig
-from app.routers import bom, components, layout, lookup, system, transactions, ws
+from app.routers import (
+    bom, bom_projects, components, inventory_tools, layout, lookup,
+    system, transactions, ws,
+)
+from app.services.backup_manager import backup_loop
 
 import os as _os
 
@@ -47,11 +53,17 @@ async def lifespan(_app: FastAPI):
     await _run_migrations()
     await _ensure_default_layout()
     await get_manager().start()
-    yield
-    await get_manager().stop()
+    backup_task = asyncio.create_task(backup_loop())
+    try:
+        yield
+    finally:
+        backup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await backup_task
+        await get_manager().stop()
 
 
-app = FastAPI(title="ChipNest", version="1.8.0", lifespan=lifespan)
+app = FastAPI(title="ChipNest", version="1.9.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,6 +76,8 @@ app.include_router(layout.router)
 app.include_router(components.router)
 app.include_router(transactions.router)
 app.include_router(bom.router)
+app.include_router(bom_projects.router)
+app.include_router(inventory_tools.router)
 app.include_router(system.router)
 app.include_router(lookup.router)
 app.include_router(ws.router)

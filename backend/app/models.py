@@ -164,3 +164,36 @@ class LayoutConfig(Base):
     # 每区独立层数（JSON 数组，如 [2,4]）；缺项用 layer_count
     zone_layers: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class BackupPreference(Base):
+    """本机备份策略；目录为空时使用默认用户数据目录。"""
+
+    __tablename__ = "backup_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
+    interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    keep_count: Mapped[int] = mapped_column(Integer, default=14)
+    directory: Mapped[str] = mapped_column(Text, default="")
+    last_backup_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+
+
+class BomProject(Base):
+    """保存 BOM 清单、人工匹配与取料步骤，cursor 指向未完成步骤。"""
+
+    __tablename__ = "bom_projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    lines: Mapped[str] = mapped_column(Text)
+    selections: Mapped[str] = mapped_column(Text, default="{}")
+    copies: Mapped[int] = mapped_column(Integer, default=1)
+    plan: Mapped[str] = mapped_column(Text)
+    cursor: Mapped[int] = mapped_column(Integer, default=0)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow,
+    )

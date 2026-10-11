@@ -38,3 +38,7 @@ backend/*.log
 .dsh-vision-toolkit/
 .screenshot-originals/
 /AGENTS.md
+/task_plan.md
+/findings.md
+/progress.md
+/.playwright-mcp/

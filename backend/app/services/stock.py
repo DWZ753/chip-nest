@@ -578,6 +578,8 @@ async def change_stock(
     delta: int,
     note: str | None = None,
     source: str = "ui",
+    commit: bool = True,
+    project_before: dict | None = None,
 ) -> Component:
     """入/出库：负数为出库，出库带行级原子保护，防并发扣成负数。"""
     if delta == 0:
@@ -615,10 +617,14 @@ async def change_stock(
         detail=f"{verb} {abs(delta)} 个（{note or '无备注'}）",
     ))
     await session.flush()
+    undo_payload = {"op": "snapshot", "id": component.id, "before": before}
+    if project_before is not None:
+        undo_payload["project"] = project_before
     await undo_service.record(
         session, f"{verb} {abs(delta)} 个 · {component.name}",
-        {"op": "snapshot", "id": component.id, "before": before},
+        undo_payload,
     )
-    await session.commit()
-    events.emit("stock.changed", component)
+    if commit:
+        await session.commit()
+        events.emit("stock.changed", component)
     return component

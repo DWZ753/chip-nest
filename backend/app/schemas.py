@@ -287,6 +287,10 @@ class MergeGroupOut(BaseModel):
     member_ids: list[int] = []
     total_quantity: int = Field(ge=0)
     moved_slots: int = Field(ge=0)   # 变成附加格的格子数
+    members: list[ComponentOut] = Field(default_factory=list)
+    differences: list[str] = Field(default_factory=list)
+    conflicting: bool = False
+    fingerprint: str = ""
 
 
 class MergeResultOut(BaseModel):
@@ -294,6 +298,7 @@ class MergeResultOut(BaseModel):
     groups: list[MergeGroupOut] = []
     merged_groups: int = Field(ge=0)
     merged_components: int = Field(ge=0)
+    skipped_groups: int = 0
 
 
 class ComponentMergeRequest(BaseModel):
@@ -373,6 +378,7 @@ class DataSummaryOut(BaseModel):
     components: int = Field(ge=0)
     transactions: int = Field(ge=0)
     empty: bool
+    projects: int = 0
 
 
 class UndoOut(BaseModel):
@@ -411,6 +417,7 @@ class ResetResult(BaseModel):
 
     deleted_components: int = Field(ge=0)
     deleted_transactions: int = Field(ge=0)
+    deleted_projects: int = Field(default=0, ge=0)
     backup_path: str
     layout_reset: bool
 
@@ -466,6 +473,7 @@ class BackupSnapshot(BaseModel):
     components: list[ComponentOut]
     transactions: list[TransactionOut]
     blocked_slots: list[BlockedSlotOut] = []
+    projects: list["BomProjectOut"] = Field(default_factory=list)
 
 
 class BackupResult(BaseModel):
@@ -487,6 +495,7 @@ class RestoreResult(BaseModel):
     transactions: int = Field(ge=0)
     blocked_slots: int = Field(ge=0)
     backup_path: str
+    projects: int = 0
 
 
 # ---------- BOM 导入 / 引导取料 ----------
@@ -577,3 +586,121 @@ class BomPick(BaseModel):
 
     component_id: int = Field(ge=1)
     amount: int = Field(ge=1)
+
+
+class MergeApplyRequest(BaseModel):
+    """仅合并已核对的预览组，指纹防止过期预览覆盖新数据。"""
+
+    groups: dict[int, str] = Field(default_factory=dict)
+
+
+class BackupSettings(BaseModel):
+    """自动备份周期、数量与本机目录。"""
+
+    enabled: bool = True
+    interval_hours: int = Field(default=24, ge=1, le=720)
+    keep_count: int = Field(default=14, ge=1, le=100)
+    directory: str = Field(default="", max_length=1024)
+
+
+class BackupSettingsOut(BackupSettings):
+    resolved_directory: str
+    last_backup_at: dt.datetime | None = None
+    last_error: str = ""
+
+
+class BackupFileOut(BaseModel):
+    """可恢复的备份历史，文件名是下载与删除的定位键。"""
+
+    name: str
+    exported_at: str
+    reason: str
+    size: int
+    components: int
+    projects: int = 0
+
+
+class ActionResult(BaseModel):
+    ok: bool = True
+
+
+class StocktakeEntry(BaseModel):
+    component_id: int = Field(ge=1)
+    expected_quantity: int = Field(ge=0)
+    quantity: int = Field(ge=0)
+
+
+class StocktakeRequest(BaseModel):
+    entries: list[StocktakeEntry] = Field(min_length=1, max_length=2000)
+    note: str = Field(default="", max_length=200)
+
+
+class StocktakeResult(BaseModel):
+    changed: int
+    components: list[ComponentOut]
+
+
+class BomProjectSave(BaseModel):
+    """未开始取料的项目可编辑，已开始项目以副本重新制作。"""
+
+    name: str = Field(min_length=1, max_length=80)
+    lines: list[BomLineOut] = Field(min_length=1, max_length=2000)
+    selections: dict[int, int] = Field(default_factory=dict)
+    copies: int = Field(default=1, ge=1, le=10000)
+    revision: int | None = Field(default=None, ge=1)
+
+
+class BomProjectOut(BaseModel):
+    id: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=80)
+    lines: list[BomLineOut] = Field(min_length=1, max_length=2000)
+    selections: dict[int, int] = Field(default_factory=dict)
+    copies: int = Field(ge=1, le=10000)
+    plan: BomPlanOut
+    cursor: int = Field(ge=0)
+    revision: int = Field(ge=1)
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+    @model_validator(mode="after")
+    def valid_progress(self):
+        if self.cursor > len(self.plan.steps):
+            raise ValueError("项目进度无效")
+        return self
+
+
+class ProjectPickRequest(BaseModel):
+    cursor: int = Field(ge=0)
+    revision: int = Field(ge=1)
+
+
+class ProjectPickResult(BaseModel):
+    component: ComponentOut
+    project: BomProjectOut
+
+
+class ReplenishmentRequest(BaseModel):
+    project_ids: list[int] = Field(default_factory=list, max_length=200)
+    include_thresholds: bool = True
+
+
+class ReplenishmentItem(BaseModel):
+    component_id: int | None = None
+    name: str
+    value: str = ""
+    package: str = ""
+    manufacturer_part: str = ""
+    supplier_part: str = ""
+    available: int = 0
+    threshold: int = 0
+    demand: int = 0
+    purchase: int = 0
+    unresolved: bool = False
+
+
+class ReplenishmentOut(BaseModel):
+    items: list[ReplenishmentItem]
+    pending_choices: int = 0
+
+
+BackupSnapshot.model_rebuild()

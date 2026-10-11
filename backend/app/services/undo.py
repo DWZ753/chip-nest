@@ -12,7 +12,10 @@ from loguru import logger
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BlockedSlot, Component, ComponentSlot, UndoEntry, utcnow
+from app.models import (
+    BlockedSlot, BomProject, Component, ComponentSlot, Transaction,
+    UndoEntry, utcnow,
+)
 
 KEEP = 30
 
@@ -94,6 +97,16 @@ async def undo_last(session: AsyncSession) -> dict:
     else:
         return {"ok": False, "label": label, "message": f"这条操作不支持撤销：{label}"}
 
+    project_before = payload.get("project")
+    if project_before:
+        project = await session.get(BomProject, project_before["id"])
+        if project is not None:
+            project.cursor = project_before["cursor"]
+            project.revision += 1
+    if payload.get("stocktake") or project_before:
+        session.add(Transaction(
+            kind="adjust", delta=0, source="ui", detail=f"撤销：{label}",
+        ))
     await session.delete(row)
     await session.commit()
     logger.info("撤销：{}（影响 {} 个元件）", label, len(touched))

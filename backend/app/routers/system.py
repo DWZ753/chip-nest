@@ -10,6 +10,7 @@
 
 import datetime as dt
 import json
+import hashlib
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -23,9 +24,11 @@ from app.db import get_session
 from app.hal.manager import get_manager
 from app.models import (
     DEFAULT_LAYOUT, BlockedSlot, Component, ComponentSlot, LayoutConfig,
-    Transaction, UndoEntry,
+    Transaction, UndoEntry, BackupPreference, BomProject, utcnow,
 )
 from app.services import undo as undo_service
+from app.services import backup_manager
+from app.services.bom_projects import project_out, project_values
 from app.services.search import build_search_text
 from app.services.stock import _dump_display_tags, _dump_tags
 
@@ -62,10 +65,12 @@ async def data_summary(session: AsyncSession = Depends(get_session)) -> dict:
     """当前有多少元件与流水：都为空时前端把「清空所有数据」按钮禁掉。"""
     components = await session.scalar(select(func.count()).select_from(Component)) or 0
     transactions = await session.scalar(select(func.count()).select_from(Transaction)) or 0
+    projects = await session.scalar(select(func.count()).select_from(BomProject)) or 0
     return {
         "components": components,
         "transactions": transactions,
-        "empty": components == 0 and transactions == 0,
+        "empty": components == 0 and transactions == 0 and projects == 0,
+        "projects": projects,
     }
 
 
@@ -121,6 +126,7 @@ def _group_key(comp: Component) -> tuple:
 @router.post("/system/merge-duplicates", response_model=schemas.MergeResultOut)
 async def merge_duplicates(
     dry_run: bool = Query(default=False, description="只预览不落库"),
+    body: schemas.MergeApplyRequest | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """把「同名 + 同标称值 + 同封装」的多条元件合并成一条。
@@ -128,6 +134,8 @@ async def merge_duplicates(
     保留 id 最小的那条：数量相加、标签取并集，其余记录的格子变成它的占用格，
     多余记录删除。dry_run=1 时只返回预览。
     """
+    if not dry_run:
+        await session.execute(text("BEGIN IMMEDIATE"))
     rows = list((await session.scalars(
         select(Component).order_by(Component.id)
     )).all())
@@ -138,12 +146,34 @@ async def merge_duplicates(
 
     groups: list[dict] = []
     merged_components = 0
+    merged_groups = 0
+    skipped_groups = 0
+    compare_fields = (
+        "manufacturer_part", "supplier_part", "tags", "threshold",
+        "display_tags", "display_fields", "card_items",
+    )
+    fingerprints: dict[int, str] = {}
+    for members in buckets.values():
+        if len(members) >= 2:
+            fingerprints[members[0].id] = hashlib.sha256(
+                json.dumps([undo_service.snapshot(item) for item in members],
+                           sort_keys=True).encode("utf-8"),
+            ).hexdigest()
+    if body is not None and not dry_run:
+        if any(fingerprints.get(key) != value
+               for key, value in body.groups.items()):
+            raise HTTPException(status_code=409, detail="合并预览已变化")
     for members in buckets.values():
         if len(members) < 2:
             continue
         keep, rest = members[0], members[1:]
         total = sum(m.quantity for m in members)
         moved = sum(1 + len(m.slots) for m in rest)
+        conflicting = any(
+            len({(getattr(item, field) or "").strip().casefold()
+                 for item in members if getattr(item, field)}) > 1
+            for field in ("manufacturer_part", "supplier_part")
+        )
 
         groups.append({
             "name": keep.name,
@@ -153,9 +183,20 @@ async def merge_duplicates(
             "member_ids": [m.id for m in members],
             "total_quantity": total,
             "moved_slots": moved,
+            "members": [schemas.ComponentOut.model_validate(item)
+                        for item in members],
+            "differences": [field for field in compare_fields
+                            if len({str(getattr(item, field))
+                                    for item in members}) > 1],
+            "conflicting": conflicting,
+            "fingerprint": fingerprints[keep.id],
         })
         if dry_run:
             continue
+        if conflicting or (body is not None and keep.id not in body.groups):
+            skipped_groups += 1
+            continue
+        merged_groups += 1
 
         # 撤销快照：保留者在前，被并掉的在后（还原时先让保留者松开这些格子）
         undo_items = [{"id": keep.id, "before": undo_service.snapshot(keep)}]
@@ -167,6 +208,12 @@ async def merge_duplicates(
         )
 
         keep.quantity = total
+        for field in ("manufacturer_part", "supplier_part"):
+            if not getattr(keep, field):
+                setattr(keep, field, next(
+                    (getattr(item, field) for item in rest
+                     if getattr(item, field)), None,
+                ))
         tags = list(_as_list(keep.tags))
         for other in rest:
             for tag in _as_list(other.tags):
@@ -200,8 +247,9 @@ async def merge_duplicates(
     return {
         "dry_run": dry_run,
         "groups": groups,
-        "merged_groups": 0 if dry_run else len(groups),
+        "merged_groups": merged_groups,
         "merged_components": 0 if dry_run else merged_components,
+        "skipped_groups": skipped_groups,
     }
 
 
@@ -214,13 +262,15 @@ def _as_list(raw: Optional[str]) -> list:
     return parsed if isinstance(parsed, list) else []
 
 
-def _backup_path() -> Path:
+def _backup_path(directory: Path | None = None) -> Path:
     """备份文件名带时间戳；同一秒内重复备份时自动加序号。"""
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = config.backup_dir() / f"chipnest-backup-{stamp}.json"
+    directory = directory or config.backup_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"chipnest-backup-{stamp}.json"
     index = 1
     while path.exists():
-        path = config.backup_dir() / f"chipnest-backup-{stamp}-{index}.json"
+        path = directory / f"chipnest-backup-{stamp}-{index}.json"
         index += 1
     return path
 
@@ -231,6 +281,8 @@ def _write_backup(
     layout: Optional[LayoutConfig],
     blocked_slots: Sequence[BlockedSlot] = (),
     reason: str = "reset",
+    projects: Sequence[BomProject] = (),
+    directory: Path | None = None,
 ) -> Path:
     """整份导出为 JSON（UTF-8，中文不转义），供用户事后手工找回数据。"""
     payload = {
@@ -257,10 +309,17 @@ def _write_backup(
             schemas.BlockedSlotOut.model_validate(slot).model_dump()
             for slot in blocked_slots
         ],
+        "projects": [project_out(item).model_dump(mode="json")
+                     for item in projects],
     }
-    path = _backup_path()
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8")
+    path = _backup_path(directory)
+    temporary = path.with_suffix(".json.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                             encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return path
 
 
@@ -269,15 +328,23 @@ async def create_backup(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """创建可恢复的 JSON 快照并保存到备份目录。"""
+    return await create_snapshot(session, "manual")
+
+
+async def create_snapshot(session: AsyncSession, reason: str) -> dict:
+    """@brief 同一事务中读取仓库及项目，文件完成后记录成功时间。"""
     # 快照与审计共用事务，避免备份期间库存与流水发生错位。
     await session.execute(text("BEGIN IMMEDIATE"))
     components = list((await session.scalars(select(Component))).all())
     transactions = list((await session.scalars(select(Transaction))).all())
     layout = await session.get(LayoutConfig, 1)
     blocked_slots = list((await session.scalars(select(BlockedSlot))).all())
+    projects = list((await session.scalars(select(BomProject))).all())
+    option = await backup_manager.settings(session)
     try:
         path = _write_backup(
-            components, transactions, layout, blocked_slots, reason="manual",
+            components, transactions, layout, blocked_slots, reason=reason,
+            projects=projects, directory=Path(option.resolved_directory),
         )
         snapshot = schemas.BackupSnapshot.model_validate_json(
             path.read_text(encoding="utf-8"),
@@ -290,6 +357,12 @@ async def create_backup(
         detail=(f"创建备份：{len(components)} 个元件、"
                 f"{len(transactions)} 条流水、{len(blocked_slots)} 个停用格"),
     ))
+    preference = await session.get(BackupPreference, 1)
+    if preference is None:
+        preference = BackupPreference(id=1)
+        session.add(preference)
+    preference.last_backup_at = utcnow()
+    preference.last_error = ""
     await session.commit()
     logger.info("手动备份已保存：{}", path)
     return {"backup_path": str(path), "backup": snapshot}
@@ -312,8 +385,13 @@ async def reset_data(
     blocked_slots = list((await session.scalars(select(BlockedSlot))).all())
 
     # 先备份再删：备份写不成功就直接报错，数据保持原样
+    projects = list((await session.scalars(select(BomProject))).all())
+    option = await backup_manager.settings(session)
     try:
-        backup = _write_backup(components, transactions, layout, blocked_slots)
+        backup = _write_backup(
+            components, transactions, layout, blocked_slots,
+            projects=projects, directory=Path(option.resolved_directory),
+        )
     except OSError as exc:
         logger.exception("清空前的备份写入失败")
         raise HTTPException(status_code=500,
@@ -325,6 +403,7 @@ async def reset_data(
     await session.execute(delete(Component))
     await session.execute(delete(BlockedSlot))   # 不可用标记属于仓库状态，一并清掉
     await session.execute(delete(UndoEntry))     # 撤销栈也清空
+    await session.execute(delete(BomProject))
     if body.reset_layout and layout is not None:
         layout.zone_count = DEFAULT_LAYOUT["zone_count"]
         layout.layer_count = DEFAULT_LAYOUT["layer_count"]
@@ -345,6 +424,7 @@ async def reset_data(
     return {
         "deleted_components": len(components),
         "deleted_transactions": len(transactions),
+        "deleted_projects": len(projects),
         "backup_path": str(backup),
         "layout_reset": bool(body.reset_layout),
     }
@@ -399,6 +479,9 @@ def _validate_backup(backup: schemas.BackupSnapshot) -> None:
         if (transaction.component_id is not None
                 and transaction.component_id not in seen_ids):
             raise HTTPException(status_code=422, detail="备份中的流水引用了不存在的元件")
+    project_ids = [item.id for item in backup.projects]
+    if len(set(project_ids)) != len(project_ids):
+        raise HTTPException(status_code=422, detail="备份中的项目编号重复")
 
 
 @router.post("/system/restore", response_model=schemas.RestoreResult)
@@ -420,10 +503,14 @@ async def restore_data(
         select(LayoutConfig).where(LayoutConfig.id == 1)
     )
     current_blocked = list((await session.scalars(select(BlockedSlot))).all())
+    current_projects = list((await session.scalars(select(BomProject))).all())
+    option = await backup_manager.settings(session)
     try:
         backup_path = _write_backup(
             current_components, current_transactions, current_layout,
             current_blocked, reason="restore",
+            projects=current_projects,
+            directory=Path(option.resolved_directory),
         )
     except OSError as exc:
         logger.exception("恢复前的备份写入失败")
@@ -439,6 +526,7 @@ async def restore_data(
         await session.execute(delete(Component))
         await session.execute(delete(BlockedSlot))
         await session.execute(delete(UndoEntry))
+        await session.execute(delete(BomProject))
 
         layout_data = body.backup.layout
         if layout_data is None:
@@ -495,6 +583,8 @@ async def restore_data(
 
         for slot in body.backup.blocked_slots:
             session.add(BlockedSlot(zone=slot.zone, layer=slot.layer, slot=slot.slot))
+        for project in body.backup.projects:
+            session.add(BomProject(**project_values(project)))
         for item in body.backup.transactions:
             session.add(Transaction(
                 id=item.id,
@@ -532,4 +622,50 @@ async def restore_data(
         "transactions": len(body.backup.transactions),
         "blocked_slots": len(body.backup.blocked_slots),
         "backup_path": str(backup_path),
+        "projects": len(body.backup.projects),
     }
+
+
+@router.get("/system/backup-settings", response_model=schemas.BackupSettingsOut)
+async def get_backup_settings(session: AsyncSession = Depends(get_session)):
+    """@brief 读取周期备份策略与最近状态。"""
+    return await backup_manager.settings(session)
+
+
+@router.put("/system/backup-settings", response_model=schemas.BackupSettingsOut)
+async def put_backup_settings(
+    body: schemas.BackupSettings, session: AsyncSession = Depends(get_session),
+):
+    """@brief 保存可写的备份目录与保留策略。"""
+    return await backup_manager.save_settings(session, body)
+
+
+@router.get("/system/backups", response_model=list[schemas.BackupFileOut])
+async def list_backups(session: AsyncSession = Depends(get_session)):
+    """@brief 列出当前目录的有效备份历史。"""
+    option = await backup_manager.settings(session)
+    return backup_manager.history(Path(option.resolved_directory))
+
+
+@router.get("/system/backups/{name}", response_model=schemas.BackupSnapshot)
+async def get_backup(name: str, session: AsyncSession = Depends(get_session)):
+    """@brief 读取一份历史备份供下载或恢复。"""
+    option = await backup_manager.settings(session)
+    return backup_manager.read_file(Path(option.resolved_directory), name)
+
+
+@router.delete("/system/backups/{name}", response_model=schemas.ActionResult)
+async def delete_backup(name: str, session: AsyncSession = Depends(get_session)):
+    """@brief 删除经过校验的备份文件并记录操作。"""
+    option = await backup_manager.settings(session)
+    directory = Path(option.resolved_directory)
+    backup_manager.read_file(directory, name)
+    try:
+        (directory / name).unlink()
+    except OSError as exc:
+        raise HTTPException(status_code=409, detail="备份删除失败") from exc
+    session.add(Transaction(
+        kind="backup", delta=0, source="ui", detail=f"删除备份：{name}",
+    ))
+    await session.commit()
+    return {"ok": True}

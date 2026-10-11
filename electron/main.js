@@ -4,7 +4,7 @@
 // PyInstaller 把后端打成 exe（下方 spawn 分支预留：见 resolvePython）。
 'use strict';
 
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -20,6 +20,22 @@ const IS_DEV = process.env.CHIPNEST_DEV === '1';
 let backendProc = null;
 let mainWindow = null;
 let quitting = false;
+
+// 冒烟验证使用独立目录，避免自动备份或迁移接触正式库存。
+if (process.env.CHIPNEST_SMOKE === '1' &&
+    process.env.CHIPNEST_SMOKE_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.CHIPNEST_SMOKE_DATA_DIR));
+}
+
+// 仅允许当前应用窗口调用原生备份目录选择器。
+ipcMain.handle('chipnest:backup-directory', async (event) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '备份目录', properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
 
 // ---------- 单实例锁 ----------
 const gotLock = app.requestSingleInstanceLock();
@@ -151,6 +167,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
   // 每次启动先清 HTTP 磁盘缓存：升级后旧 index.html 可能被缓存命中
@@ -169,7 +186,9 @@ async function createWindow() {
           "['/api/v1/layout','/api/v1/components','/api/v1/system/status']" +
           ".map(u => fetch(u).then(r => r.status).catch(() => 0))" +
           ".concat(fetch('/api/v1/health').then(r => r.json())" +
-          ".then(j => j.version || '').catch(() => '')))",
+          ".then(j => j.version || '').catch(() => '')," +
+          "Promise.resolve(typeof window.chipnest?.chooseBackupDirectory" +
+          " === 'function')))",
         )
         .catch(() => [0, 0, 0, '']);
       // 等首屏渲染稳定后再查 UI 标记
@@ -180,7 +199,8 @@ async function createWindow() {
       console.log('[chipnest-smoke] probe =', JSON.stringify(probe),
                   '| ui-marker =', marker);
       const apiOk = probe[0] === 200 && probe[1] === 200 && probe[2] === 200;
-      if (apiOk && marker && String(probe[3]) === app.getVersion()) {
+      if (apiOk && marker && probe[4] === true &&
+          String(probe[3]) === app.getVersion()) {
         console.log('[chipnest-smoke] 版本', probe[3], '· UI 标记存在 · 冒烟通过');
         setTimeout(() => app.quit(), 600);
       } else {

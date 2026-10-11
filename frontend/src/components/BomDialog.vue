@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
@@ -9,7 +9,7 @@ import {
 } from '@lucide/vue'
 
 import { api } from '../api/client'
-import type { BomParseOut, BomPlan, BomStep } from '../api/types'
+import type { BomParseOut, BomPlan, BomStep, BomProject } from '../api/types'
 import { useBinsStore, type BinPosition } from '../stores/bins'
 import { usePickerStore } from '../stores/picker'
 import { suggestThreshold } from '../utils/stock'
@@ -17,10 +17,13 @@ import InventoryMaintenancePanel from './inventory_maintenance_panel.vue'
 import OperationHistoryPanel from './operation_history_panel.vue'
 import MotionTabs from './ui/motion_tabs.vue'
 import MotionPanel from './ui/motion_panel.vue'
+import StocktakePanel from './stocktake_panel.vue'
+import ReplenishmentPanel from './replenishment_panel.vue'
+import BomProjectPanel from './bom_project_panel.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
-  close: []; manual: []; start: [BomStep[]]; afterLeave: []
+  close: []; manual: []; start: [BomStep[], BomProject?]; afterLeave: []
 }>()
 
 const bins = useBinsStore()
@@ -35,14 +38,25 @@ const busy = ref(false)
 const errorMsg = ref<string | null>(null)
 const view = ref<'work' | 'import'>('work')
 const active_tab = ref('intake')
+const project_panel = ref<InstanceType<typeof BomProjectPanel> | null>(null)
+const current_project = ref<BomProject | null>(null)
+const copies = ref(1)
+const project_busy = ref(false)
 const tabs = [
   { key: 'intake', label: '入库' },
   { key: 'pick', label: 'BOM 取料' },
   { key: 'maintenance', label: '元件整理' },
+  { key: 'stocktake', label: '盘点' },
+  { key: 'replenishment', label: '补货清单' },
   { key: 'history', label: '操作记录' },
 ]
 
 function switch_tab(key: string) {
+  if (active_tab.value === 'pick' && key !== 'pick') {
+    current_project.value = null
+    copies.value = 1
+    plan.value = null
+  }
   active_tab.value = key
   view.value = 'work'
 }
@@ -87,6 +101,9 @@ watch(
     idStop.value = false
     idDone.value = 0
     idTotal.value = 0
+    current_project.value = null
+    copies.value = 1
+    project_busy.value = false
   },
 )
 
@@ -147,8 +164,50 @@ async function onFile(ev: Event) {
 }
 
 async function runPlan() {
-  selections.value = {}
   await updatePlan()
+}
+
+/** 重开项目时先完成文本重置，避免异步 watch 清掉保存的匹配。 */
+async function load_project(project: BomProject) {
+  text.value = ''
+  await nextTick()
+  fileName.value = project.name
+  parsed.value = { lines: project.lines,
+    total_quantity: project.lines.reduce((total, line) => total + line.quantity, 0) }
+  selections.value = { ...project.selections }
+  plan.value = project.plan
+  errorMsg.value = null
+}
+
+/** 新项目清空取料工作区，已经保存的记录继续保留。 */
+function reset_project() {
+  text.value = ''
+  fileName.value = ''
+  parsed.value = null
+  plan.value = null
+  selections.value = {}
+  current_project.value = null
+}
+
+/** 修改份数后重新规划，防止使用上一份数的取料数量。 */
+function set_copies(value: number) {
+  copies.value = value
+  plan.value = null
+}
+
+/** 引导前保存最新规划，后续步骤与持久化项目绑定。 */
+async function start_project() {
+  const project = await project_panel.value?.prepare_start()
+  if (!project) return
+  if (project.plan.choices.length) {
+    errorMsg.value = '匹配未完成'
+    return
+  }
+  const remaining = project.plan.steps.slice(project.cursor).map(step => ({
+    ...step, component: bins.components.find(comp => comp.id === step.component.id)
+      ?? step.component,
+  }))
+  if (remaining.length) emit('start', remaining, project)
 }
 
 async function chooseCandidate(line_index: number, component_id: number) {
@@ -166,7 +225,16 @@ async function updatePlan(): Promise<boolean> {
   errorMsg.value = null
   try {
     if (parsed.value?.lines.length) {
-      plan.value = await api.planBomRows(parsed.value.lines, selections.value)
+      if (!Number.isInteger(copies.value) || copies.value < 1 || copies.value > 10000) {
+        errorMsg.value = '制作份数无效'
+        return false
+      }
+      if (current_project.value?.cursor) {
+        return !!await project_panel.value?.prepare_start()
+      }
+      plan.value = await api.planBomRows(parsed.value.lines.map(line => ({
+        ...line, quantity: line.quantity * (active_tab.value === 'pick' ? copies.value : 1),
+      })), selections.value)
       return true
     } else {
       errorMsg.value = '没有 BOM 内容'
@@ -349,7 +417,7 @@ const canStart = computed(() => !busy.value && !!plan.value
               </div>
 
               <MotionTabs :model-value="active_tab" :tabs="tabs"
-                          label="库存分组" :disabled="busy || idBusy"
+                          label="库存分组" :disabled="busy || idBusy || project_busy"
                           @update:model-value="switch_tab" />
               <MotionPanel>
               <div :key="active_tab + ':' + view"
@@ -357,23 +425,34 @@ const canStart = computed(() => !busy.value && !!plan.value
               <InventoryMaintenancePanel
                 v-if="active_tab === 'maintenance'" />
               <OperationHistoryPanel v-else-if="active_tab === 'history'" />
+              <StocktakePanel v-else-if="active_tab === 'stocktake'" />
+              <ReplenishmentPanel v-else-if="active_tab === 'replenishment'" />
               <!-- ========== 工作区：粘贴文本 / xlsx 文件 ========== -->
               <div v-else-if="view === 'work'" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+                <BomProjectPanel v-if="active_tab === 'pick'" ref="project_panel"
+                  :lines="parsed?.lines ?? null" :selections="selections"
+                  :file-name="fileName" :disabled="busy || idBusy"
+                  @load="load_project" @reset="reset_project" @copies="set_copies"
+                  @project="current_project = $event" @plan="plan = $event"
+                  @busy="project_busy = $event" />
                 <h3 class="text-[13px] font-extrabold">
                   {{ active_tab === 'intake' ? 'BOM 入库' : 'BOM 取料' }}
                 </h3>
                 <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <textarea v-model="text" class="textarea mono !min-h-[96px] text-[12.5px]" spellcheck="false"
+                            :disabled="project_busy || (active_tab === 'pick' && !!current_project?.cursor)"
                             placeholder="BOM 内容" />
                   <div class="flex flex-col gap-2">
                     <label class="btn !justify-start border-dashed" :class="{ '!border-[var(--accent)]': busy }">
                       <FileUp :size="15" /> {{ busy ? '解析中…' : '选择 BOM 文件' }}
-                      <input type="file" accept=".xlsx,.csv,.txt" class="hidden" @change="onFile" />
+                      <input type="file" accept=".xlsx,.csv,.txt" class="hidden"
+                        :disabled="busy || project_busy || (active_tab === 'pick' && !!current_project?.cursor)"
+                        @change="onFile" />
                     </label>
                     <span v-if="fileName" class="chip mono !text-[10.5px]" style="color: var(--accent)">
                       ✓ {{ fileName }}
                     </span>
-                    <button class="btn" :disabled="busy" @click="runParse">
+                    <button class="btn" :disabled="busy || project_busy || (active_tab === 'pick' && !!current_project?.cursor)" @click="runParse">
                       <ScanText :size="15" /> 解析预览
                     </button>
                   </div>
@@ -389,7 +468,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                   </span>
                   <div class="flex-1" />
                   <button v-if="active_tab === 'pick'" class="btn"
-                          :disabled="!parsed || busy" @click="runPlan">
+                          :disabled="!parsed || busy || project_busy" @click="runPlan">
                     <Play :size="15" /> 匹配库存并规划
                   </button>
                   <button v-else class="btn btn-primary"
@@ -521,6 +600,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                       <span class="font-bold">{{ step.component.name }}</span>
                       <span v-if="step.component.value" class="mono" style="color: var(--text-dim)">{{ step.component.value }}</span>
                       <span v-if="step.component.package" class="mono" style="color: var(--text-faint)">{{ step.component.package }}</span>
+                      <span v-if="i < (current_project?.cursor ?? 0)" class="chip">已取</span>
                       <span class="ml-auto num font-bold" style="color: var(--accent-ink)">取 ×{{ step.quantity }}</span>
                       <span v-if="step.component.led_index !== null" class="chip mono !text-[9.5px]">LED {{ step.component.led_index }}</span>
                     </div>
@@ -531,8 +611,10 @@ const canStart = computed(() => !busy.value && !!plan.value
                      class="mt-1 flex items-center gap-2">
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="emit('close')">关闭</button>
-                  <button class="btn btn-primary" :disabled="!canStart" @click="plan && emit('start', plan.steps)">
-                    <ShoppingCart :size="15" /> 开始引导
+                  <button class="btn btn-primary" :disabled="!canStart || project_busy
+                    || (current_project?.cursor ?? 0) >= plan.steps.length"
+                    @click="start_project">
+                    <ShoppingCart :size="15" /> {{ current_project?.cursor ? '继续取料' : '开始引导' }}
                   </button>
                 </div>
               </div>

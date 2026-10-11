@@ -58,6 +58,10 @@ export interface MergeGroup {
   member_ids: number[]
   total_quantity: number
   moved_slots: number
+  members: ComponentItem[]
+  differences: string[]
+  conflicting: boolean
+  fingerprint: string
 }
 
 export interface MergeResult {
@@ -65,6 +69,7 @@ export interface MergeResult {
   groups: MergeGroup[]
   merged_groups: number
   merged_components: number
+  skipped_groups: number
 }
 
 export interface TransactionRow {
@@ -161,6 +166,7 @@ export interface ReindexResult {
 export interface DataSummary {
   components: number
   transactions: number
+  projects: number
   empty: boolean
 }
 
@@ -168,6 +174,7 @@ export interface DataSummary {
 export interface ResetResult {
   deleted_components: number
   deleted_transactions: number
+  deleted_projects: number
   backup_path: string
   layout_reset: boolean
 }
@@ -180,18 +187,85 @@ export interface BackupSnapshot {
   components: ComponentItem[]
   transactions: TransactionRow[]
   blocked_slots: BlockedSlot[]
+  projects?: BomProject[]
 }
 
 export interface RestoreResult {
   components: number
   transactions: number
   blocked_slots: number
+  projects: number
   backup_path: string
 }
 
 export interface BackupResult {
   backup_path: string
   backup: BackupSnapshot
+}
+
+export interface BackupSettings {
+  enabled: boolean
+  interval_hours: number
+  keep_count: number
+  directory: string
+  resolved_directory: string
+  last_backup_at: string | null
+  last_error: string
+}
+
+export interface BackupFile {
+  name: string
+  exported_at: string
+  reason: string
+  size: number
+  components: number
+  projects: number
+}
+
+export interface BomProject {
+  id: number
+  name: string
+  lines: BomLineOut[]
+  selections: Record<number, number>
+  copies: number
+  plan: BomPlan
+  cursor: number
+  revision: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectSave {
+  name: string
+  lines: BomLineOut[]
+  selections: Record<number, number>
+  copies: number
+  revision?: number
+}
+
+export interface StocktakeEntry {
+  component_id: number
+  expected_quantity: number
+  quantity: number
+}
+
+export interface ReplenishmentItem {
+  component_id: number | null
+  name: string
+  value: string
+  package: string
+  manufacturer_part: string
+  supplier_part: string
+  available: number
+  threshold: number
+  demand: number
+  purchase: number
+  unresolved: boolean
+}
+
+export interface Replenishment {
+  items: ReplenishmentItem[]
+  pending_choices: number
 }
 
 // 联网识别候选（后端 /api/v1/lookup/*）

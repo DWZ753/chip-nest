@@ -3,10 +3,12 @@ import { computed, ref, watch } from 'vue'
 import { Check, CircleCheck, PackageOpen, X } from '@lucide/vue'
 
 import { api, ApiError } from '../api/client'
-import type { BomStep } from '../api/types'
+import type { BomStep, BomProject } from '../api/types'
 import { useBinsStore, zoneName } from '../stores/bins'
 
-const props = defineProps<{ open: boolean; steps: BomStep[] }>()
+const props = defineProps<{
+  open: boolean; steps: BomStep[]; project?: BomProject | null
+}>()
 const emit = defineEmits<{ close: []; finished: [] }>()
 
 const bins = useBinsStore()
@@ -16,6 +18,7 @@ const direction = ref<'right' | 'left'>('right')
 const picking = ref(false)
 const phase = ref<'go' | 'done' | 'abort'>('go')
 const message = ref<string | null>(null)
+const saved_project = ref<BomProject | null>(null)
 
 const step = computed<BomStep | null>(
   () => props.steps[index.value] ?? null,
@@ -30,6 +33,7 @@ watch(
     phase.value = 'go'
     message.value = null
     picking.value = false
+    saved_project.value = props.project ?? null
     syncGuide()
   },
 )
@@ -51,11 +55,19 @@ function syncGuide() {
 
 async function pickNext() {
   const s = step.value
-  if (!s || phase.value !== 'go') return
+  if (!s || phase.value !== 'go' || picking.value) return
   picking.value = true
   message.value = null
   try {
-    const updated = await api.pickBom(s.component.id, s.quantity)
+    let updated
+    if (saved_project.value) {
+      const project = saved_project.value
+      const result = await api.pickProject(project.id, project.cursor, project.revision)
+      updated = result.component
+      saved_project.value = result.project
+    } else {
+      updated = await api.pickBom(s.component.id, s.quantity)
+    }
     bins.upsert(updated)          // 即时刷新卡片数量
     bins.setGuidePosition(null)   // 短暂离开高亮再跳到下一步
     if (index.value + 1 >= props.steps.length) {
@@ -76,6 +88,7 @@ async function pickNext() {
 }
 
 function abort() {
+  if (picking.value) return
   bins.setGuidePosition(null)
   phase.value = 'abort'
   message.value = null
