@@ -1,7 +1,7 @@
 """元件联网识别：输入料号/描述 → 自动匹配立创编号并填好字段。
 
 数据源按可用性逐个降级（任一环失败都不会把错误抛给界面）：
-1. jlcsearch 社区 API（免鉴权）：分类端点更准，通用 /api/search 兜底；
+1. jlcsearch 社区 API（免鉴权）：标称值用分类过滤，型号用通用搜索；
 2. 立创商城详情接口：拿完整参数（阻值/容值…）、品牌、数据手册链接；
 3. EasyEDA Pro 搜索：前两个都拿不到时的备用源。
 
@@ -98,7 +98,19 @@ _VALUE_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 _VALUE_IN_DESC_RE = re.compile(
-    r"(\d+(?:\.\d+)?\s*(?:pF|nF|uF|µF|μF|mF|[kKmM]?Ω|[kK]?[rR]\b))"
+    r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?\s*"
+    r"(?:[pnuµμm]?F|[pnuµμm]?H|[kKmM]?Ω|[kK]?[rR]\b))",
+    re.IGNORECASE,
+)
+_QUERY_VALUE_RE = re.compile(
+    r"(?<![A-Za-z0-9.])\d+(?:\.\d+)?\s*"
+    r"(?:[rRkKM]\d+|[pnuµμm]?f|[pnuµμm]?h|"
+    r"[kKmM]?(?:Ω|ohms?)|[rRkKM])"
+    r"(?![A-Za-z0-9.])", re.IGNORECASE,
+)
+_VOLTAGE_RE = re.compile(
+    r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*([kK]?)V\b",
+    re.IGNORECASE,
 )
 
 
@@ -184,21 +196,24 @@ def _pick_value(candidate: dict, description: str = "") -> str:
     """取阻值/容值：参数表优先，其次从描述里抠。"""
     for item in candidate.get("paramVOList") or []:
         name = str(item.get("paramNameEn") or item.get("paramName") or "").lower()
-        if any(key in name for key in _VALUE_KEYS):
+        if name in _VALUE_KEYS:
             value = str(item.get("paramValue") or item.get("paramValueEn") or "").strip()
             if value and value != "-":
                 return value[:32]
-    raw = candidate.get("resistance") or candidate.get("capacitance_farads")
-    if raw:
-        return _format_si(float(raw), "Ω" if candidate.get("resistance") else "F")
+    if candidate.get("resistance") is not None:
+        return _format_si(float(candidate["resistance"]), "Ω")
+    if candidate.get("capacitance_farads") is not None:
+        return _format_si(float(candidate["capacitance_farads"]), "F")
     match = _VALUE_IN_DESC_RE.search(description or "")
     return match.group(1).strip()[:32] if match else ""
 
 
 def _format_si(value: float, unit: str) -> str:
     """把 10000Ω / 1e-7F 这类原始值写成 10kΩ / 100nF。"""
-    if value <= 0:
+    if value < 0:
         return ""
+    if value == 0:
+        return f"0{unit}"
     steps = ((1e9, "G"), (1e6, "M"), (1e3, "k")) if unit == "Ω" else (
         (1.0, ""), (1e-3, "m"), (1e-6, "u"), (1e-9, "n"), (1e-12, "p"))
     for factor, prefix in steps:
@@ -224,35 +239,31 @@ def parse_value(text: str) -> Optional[tuple[str, float]]:
     raw = (text or "").strip().replace(" ", "")
     if not raw:
         return None
-    # 4R7 / 1R0：R 当小数点
-    split = re.match(r"^(\d+)R(\d+)$", raw)
+    # 4R7 / 4k7：倍率字母兼作小数点。
+    split = re.fullmatch(r"(\d+)([rRkKM])(\d+)", raw)
     if split:
-        return ("R", float(f"{split.group(1)}.{split.group(2)}"))
+        factor = _VALUE_FACTORS.get(split.group(2), 1.0)
+        return ("R", float(f"{split[1]}.{split[3]}") * factor)
 
-    match = re.match(r"^(\d+(?:\.\d+)?)(.*)$", raw)
+    match = re.fullmatch(
+        r"(\d+(?:\.\d+)?)([pnuµμmkKMG]?)(Ω|ohms?|[rRfFhH])?",
+        raw, re.IGNORECASE,
+    )
     if not match:
         return None
-    number, suffix = match.group(1), match.group(2)
-    kind: Optional[str] = None
-    factor = 1.0
-    for char in suffix:
-        if char in _VALUE_FACTORS:
-            factor = _VALUE_FACTORS[char]
-            if char in "kKMG":
-                kind = kind or "R"   # 只有倍率（10k）时按电阻理解
-        elif char in "ΩΩ":
-            kind = "R"
-        elif char in "Ff":
-            kind = "C"
-        elif char in "Hh":
-            kind = "L"
-        elif char in "WwVvAa":
-            return None   # 功率/电压/电流不是标称值
-    try:
-        value = float(number) * factor
-    except ValueError:
+    number, prefix, unit = match.groups()
+    unit = (unit or "").lower()
+    if prefix and not unit and prefix not in "kKMG":
         return None
-    return (kind or "R", value)
+    factor = _VALUE_FACTORS.get(prefix, _VALUE_FACTORS.get(prefix.lower(), 1))
+    kind = "C" if unit == "f" else "L" if unit == "h" else "R"
+    return kind, float(number) * factor
+
+
+def _query_value(text: str) -> str:
+    """从混合描述中提取带单位的标称值，不把封装/电压/型号当数值。"""
+    match = _QUERY_VALUE_RE.search(text or "")
+    return match.group(0) if match else ""
 
 
 def is_value_query(keyword: str) -> bool:
@@ -260,18 +271,18 @@ def is_value_query(keyword: str) -> bool:
     key = (keyword or "").strip()
     if not key or _PACKAGE_RE.match(key):
         return False
-    return bool(re.search(r"[a-zA-ZµμΩ]", key))
+    return bool(_query_value(key))
 
 
 def value_matches(requested: str, candidate_value: str) -> Optional[bool]:
     """True=对得上，False=明显不是同一个值，None=信息不足不好判断。"""
     left = parse_value(requested)
     right = parse_value(candidate_value)
-    if left is None or right is None or left[0] != right[0]:
+    if left is None or right is None:
         return None
-    if left[1] <= 0 or right[1] <= 0:
-        return None
-    return abs(left[1] - right[1]) / max(left[1], right[1]) < 0.02
+    if left[0] != right[0]:
+        return False
+    return abs(left[1] - right[1]) <= max(left[1], right[1]) * 0.0001
 
 
 # 描述里能稳定抽出来的几个参数（立创详情没有这条料时的兜底，点哪条候选都有东西看）
@@ -342,6 +353,13 @@ def detect_intent(text: str) -> Optional[str]:
         return "microcontrollers"
     if any(hint in lowered for hint in _REGULATOR_HINT):
         return "voltage_regulators"
+    if re.search(r"电容|\bcapacitors?\b", lowered):
+        return "capacitors"
+    if re.search(r"电阻|\bresistors?\b", lowered):
+        return "resistors"
+    value = parse_value(_query_value(text))
+    if value:
+        return {"R": "resistors", "C": "capacitors"}.get(value[0])
     first = lowered.split()[0] if lowered.split() else lowered
     if _CAPACITANCE_RE.match(first) or _CAPACITANCE_RE.match(lowered):
         return "capacitors"
@@ -386,7 +404,7 @@ def score_of(candidate: Candidate, keyword: str, package: Optional[str]) -> floa
     if package:
         score += 60 if candidate.package.upper() == package.upper() else -40
     # 标称值是否真的对上：jlcsearch 的关键词匹配很宽松（搜 10k 会带出 510k 的料）
-    verdict = (value_matches(keyword, candidate.value)
+    verdict = (value_matches(_query_value(keyword), candidate.value)
                if candidate.value and is_value_query(keyword) else None)
     if verdict is True:
         score += 90
@@ -418,6 +436,8 @@ def looks_like_partno(text: str) -> bool:
     「10k 0603」「100nF 0402」这类值+封装的查询不算型号，不能按型号去过滤。
     """
     stripped = (text or "").strip()
+    if _query_value(stripped):
+        return False
     if (_CAPACITANCE_RE.match(stripped) or _RESISTANCE_RE.match(stripped)
             or _VALUE_TOKEN_RE.match(stripped)):
         return False
@@ -437,6 +457,69 @@ def matches_keyword(candidate: Candidate, keyword: str) -> bool:
         return True
     haystack = _compact(f"{candidate.mpn}{candidate.lcsc}{candidate.description}")
     return key in haystack
+
+
+def _mounting(text: str) -> str:
+    """识别贴片/直插；明确的引脚描述优先，避免上游错误贴片标记。"""
+    if re.search(
+        r"直插|插件|插装|\b(?:plug-?in|through[ -]?hole|tht|leaded)\b",
+        text, re.IGNORECASE,
+    ):
+        return "through_hole"
+    if re.search(
+        r"贴片|表面安装|表面贴装|\b(?:smd|smt|surface[ -]?mount)\b",
+        text, re.IGNORECASE,
+    ):
+        return "surface_mount"
+    return ""
+
+
+def _voltage(text: str) -> Optional[float]:
+    """将额定电压中的 V/kV 转为伏特。"""
+    match = _VOLTAGE_RE.search(text)
+    return float(match[1]) * (1000 if match[2] else 1) if match else None
+
+
+def _matches_constraints(candidate: Candidate, keyword: str,
+                         package: Optional[str]) -> bool:
+    """先核对明确规格，再允许热度参与排序；未知规格不能自动填入。"""
+    requested = _query_value(keyword)
+    if requested and value_matches(requested, candidate.value) is not True:
+        return False
+    intent = detect_intent(keyword)
+    if intent in ("resistors", "capacitors"):
+        kind = ("R" if "电阻" in candidate.category else
+                "C" if "电容" in candidate.category else "")
+        value = parse_value(candidate.value)
+        kind = kind or (value[0] if value else "")
+        if kind != ("R" if intent == "resistors" else "C"):
+            return False
+    if package and not re.match(
+        rf"^{re.escape(package)}(?:$|[,(])", candidate.package, re.IGNORECASE,
+    ):
+        return False
+    mounting = _mounting(keyword)
+    if mounting:
+        actual = _mounting(" ".join([
+            candidate.package, candidate.description, candidate.category,
+            *[value for name, value in candidate.params.items()
+              if re.search(r"安装|mount", name, re.IGNORECASE)],
+        ]))
+        if not actual and re.fullmatch(
+            r"0201|0402|0603|0805|1206|1210|2010|2512", candidate.package,
+        ):
+            actual = "surface_mount"
+        if actual != mounting:
+            return False
+    requested_voltage = _voltage(keyword)
+    if requested_voltage is not None:
+        voltage = next((value for name, value in candidate.params.items()
+                        if re.search(r"额定电压|耐压|rated.*voltage|voltage.*rat",
+                                     name, re.IGNORECASE)), "")
+        actual_voltage = _voltage(voltage or candidate.description)
+        if actual_voltage != requested_voltage:
+            return False
+    return True
 
 
 class LookupService:
@@ -499,18 +582,21 @@ class LookupService:
     # ---------- 数据源 ----------
     async def _search_jlc_category(self, intent: str, keyword: str,
                                    package: Optional[str], limit: int) -> list[Candidate]:
-        """分类端点：实测它的 search 参数不过滤（乱码查询也返回同一份列表），
-        所以只能拿「按热度排的整类清单」，仅当没有关键词可用时兜底。"""
+        """分类端点只支持结构化数值过滤；倍率须先转为欧姆/法拉。"""
         params: dict[str, Any] = {}
         if package:
             params["package"] = package
+        value = parse_value(_query_value(keyword))
+        if value and intent in ("resistors", "capacitors"):
+            name = "resistance" if intent == "resistors" else "capacitance"
+            params[name] = f"{value[1]:.12g}"
         data = await self._get_json(f"{JLC_BASE}/{intent}/list.json", params)
         if not isinstance(data, dict):
             return []
         rows = data.get(intent) or data.get("components") or []
         hint = _INTENT_CN.get(intent)
         return [self._from_jlc(row, source=f"jlcsearch/{intent}", hint=hint)
-                for row in rows[:limit]]
+                for row in rows]
 
     async def _search_jlc_generic(self, keyword: str, package: Optional[str],
                                   limit: int) -> list[Candidate]:
@@ -547,6 +633,9 @@ class LookupService:
                 manufacturer=str(row.get("manufacturer") or "")[:32],
                 category=_category_cn(str(row.get("description") or ""),
                                       str(row.get("title") or "")),
+                value=_pick_value({}, str(row.get("description") or "")),
+                params=_params_from_description(str(row.get("description")
+                                                    or "")),
                 stock=_as_int(row.get("stock")),
                 price=price,
                 source="easyeda",
@@ -576,6 +665,8 @@ class LookupService:
         params = {k: v for k, v in list(attrs.items())[:8]}
         if not params:
             params = _params_from_description(description)
+        if row.get("voltage_rating") is not None:
+            params["额定电压"] = f"{row['voltage_rating']}V"
         return Candidate(
             lcsc=lcsc,
             mpn=str(row.get("mfr") or "")[:64],
@@ -620,44 +711,32 @@ class LookupService:
     # ---------- 对外方法 ----------
     async def search(self, session: AsyncSession, keyword: str,
                      package: Optional[str] = None, limit: int = 10) -> list[Candidate]:
-        """关键词搜索：分类端点优先，通用端点兜底，EasyEDA 垫底。"""
+        """标称值用分类过滤，型号用通用搜索；无合格结果才换数据源。"""
         keyword = (keyword or "").strip()
         if not keyword:
             return []
         self.failures = 0
-        package = _clean_package(package) or None
-        # 缓存键带 v2：旧版本把分类端点的整类清单当结果，里面全是答非所问的料
-        key = f"search:v2:{keyword.lower()}|{package or ''}|{limit}"
+        keyword, embedded_package = split_query(keyword)
+        package = _clean_package(package) or embedded_package
+        # 旧缓存包含跨品类/安装方式错误候选，不再复用。
+        key = f"search:v3:{keyword.lower()}|{package or ''}|{limit}"
         cached = await self._cache_get(session, key, CACHE_SEARCH_TTL)
         if cached is not None:
             return [Candidate.from_dict(item) for item in cached]
 
-        # 通用端点是唯一真正按关键词过滤的接口，作为主来源
-        found = self._rank(self._dedupe(
-            await self._search_jlc_generic(keyword, package, limit)), keyword, package)
+        found: list[Candidate] = []
+        intent = detect_intent(keyword)
+        if _query_value(keyword) and intent in ("resistors", "capacitors"):
+            found = self._rank(await self._search_jlc_category(
+                intent, keyword, package, limit), keyword, package)
+        if not found:
+            found = self._rank(await self._search_jlc_generic(
+                keyword, package, limit), keyword, package)
+        if not found:
+            found = self._rank(await self._search_easyeda(
+                keyword, max(limit, 10)), keyword, package)
 
-        if looks_like_partno(keyword):
-            relevant = [c for c in found if matches_keyword(c, keyword)]
-            if relevant:
-                found = relevant
-            else:
-                # 型号查不到：再问一次 EasyEDA（它按型号精确检索），仍没有就保留原结果兜底
-                extra = self._rank(self._dedupe(
-                    await self._search_easyeda(keyword, max(limit, 10))), keyword, package)
-                relevant_extra = [c for c in extra if matches_keyword(c, keyword)]
-                found = relevant_extra or extra or found
-        elif not found:
-            # 值/描述类查询（10k、100nF…）通用端点没结果时按品类捞一批
-            intent = detect_intent(keyword)
-            if intent:
-                found = self._rank(self._dedupe(
-                    await self._search_jlc_category(intent, keyword, package, limit)),
-                    keyword, package)
-            if not found:
-                found = self._rank(self._dedupe(
-                    await self._search_easyeda(keyword, max(limit, 10))), keyword, package)
-
-        found = found[:limit]
+        found = self._dedupe(found)[:limit]
         await self._cache_put(session, key, [c.to_dict() for c in found])
         return found
 
@@ -679,11 +758,11 @@ class LookupService:
         if best is None:
             rows = await self._search_jlc_generic(code, None, 3)
             exact = [c for c in rows if c.lcsc.upper() == code.upper()]
-            best = (exact or rows or [None])[0]
+            best = (exact or [None])[0]
         if best is None:
             rows = await self._search_easyeda(code, 3)
             exact = [c for c in rows if c.lcsc.upper() == code.upper()]
-            best = (exact or rows or [None])[0]
+            best = (exact or [None])[0]
         if best is None:
             return None
 
@@ -714,7 +793,8 @@ class LookupService:
             before = self.failures
             enriched = await self.detail(session, best.lcsc)
             self.failures = before + self.failures
-            if enriched is not None:
+            if (enriched is not None
+                    and _matches_constraints(enriched, keyword, package)):
                 candidates = [enriched] + [c for c in candidates if c.lcsc != enriched.lcsc]
                 best = enriched
         return LookupResult(query=text, kind="keyword", best=best, candidates=candidates)
@@ -736,9 +816,12 @@ class LookupService:
 
     @staticmethod
     def _rank(items: list[Candidate], keyword: str, package: Optional[str]) -> list[Candidate]:
+        items = [item for item in items
+                 if _matches_constraints(item, keyword, package)
+                 and (not looks_like_partno(keyword)
+                      or matches_keyword(item, keyword))]
         for item in items:
             item.score = score_of(item, keyword, package)
-        # 指定了封装就把其它封装的排到最后（不直接丢，方便用户改主意）
         return sorted(items, key=lambda c: c.score, reverse=True)
 
 

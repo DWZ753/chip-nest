@@ -3,12 +3,12 @@
 # ChipNest · 智能元件管家
 
 把电子元件的位置、数量和 BOM 取料放在同一张货架网格里。
-**当前版本 v1.9.0**，新增备份管理、盘点、BOM 项目与补货清单。
+**当前版本 v1.9.1**，修复联网识别的类别、规格与安装方式匹配。
 提供 Windows 安装包，安装后无需配置 Python。
 没有 ESP32 硬件也能使用库存管理，连接状态显示为「模拟」。
 
 [下载安装包](https://github.com/DWZ753/chip-nest/releases/latest) ·
-[版本更新](docs/release-notes-v1.9.0.md) ·
+[版本更新](docs/release-notes-v1.9.1.md) ·
 [反馈问题](https://github.com/DWZ753/chip-nest/issues)
 
 ![v1.9.0 仓库总览](docs/screenshots/overview_v1.9.0.png)
@@ -31,7 +31,7 @@
 ## 安装与升级
 
 1. 从 [Releases](https://github.com/DWZ753/chip-nest/releases/latest)
-   下载 `ChipNest-Setup-1.9.0.exe`。
+   下载 `ChipNest-Setup-1.9.1.exe`。
 2. 升级前关闭正在运行的 ChipNest，再运行安装程序。
 3. 启动后在左上角或「设置 → 关于」核对版本号。
 
@@ -97,6 +97,11 @@
 
 「联网识别」可以根据料号或描述提供候选信息，确认后再保存；
 离线时可以继续手工填写。
+
+规格查询会核对元件类别、标称值、封装、额定电压和安装方式。
+例如 `1k 0603` 匹配 1kΩ 的 0603 电阻；`470uF 25V 贴片`
+匹配对应容量、电压的贴片电容。「直插」「插件」以及 SMD、THT
+也可识别；明确指定的规格没有匹配结果时，不自动填入其他规格。
 
 <details>
 <summary>查看元件字段截图</summary>
