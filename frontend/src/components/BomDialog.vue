@@ -52,11 +52,6 @@ const tabs = [
 ]
 
 function switch_tab(key: string) {
-  if (active_tab.value === 'pick' && key !== 'pick') {
-    current_project.value = null
-    copies.value = 1
-    plan.value = null
-  }
   active_tab.value = key
   view.value = 'work'
 }
@@ -398,12 +393,11 @@ const canStart = computed(() => !busy.value && !!plan.value
 
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="dialog-panel-enter"
-                           enter-from="dialog-panel-from"
-                           enter-to="dialog-panel-visible"
+          <TransitionChild as="template"
                            leave="dialog-panel-leave"
                            leave-to="dialog-panel-to">
-            <DialogPanel class="glass-strong flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl p-5">
+            <DialogPanel class="motion-dialog glass-strong flex max-h-[90vh]
+              w-full max-w-3xl flex-col rounded-2xl p-5">
               <div class="mb-3 flex items-center gap-2.5">
                 <DialogTitle class="text-base font-extrabold tracking-wide">库存</DialogTitle>
                 <button v-if="active_tab === 'intake'"
@@ -419,40 +413,56 @@ const canStart = computed(() => !busy.value && !!plan.value
               <MotionTabs :model-value="active_tab" :tabs="tabs"
                           label="库存分组" :disabled="busy || idBusy || project_busy"
                           @update:model-value="switch_tab" />
-              <MotionPanel>
-              <div :key="active_tab + ':' + view"
-                   class="panel-reveal flex min-h-0 flex-1 flex-col">
+              <MotionPanel :active_key="active_tab + ':' + view"
+                           :page_order="tabs.flatMap(tab =>
+                             [tab.key + ':work', tab.key + ':import'])">
+              <template #default="{ page_key }">
+              <div class="flex min-h-0 flex-1 flex-col">
               <InventoryMaintenancePanel
-                v-if="active_tab === 'maintenance'" />
-              <OperationHistoryPanel v-else-if="active_tab === 'history'" />
-              <StocktakePanel v-else-if="active_tab === 'stocktake'" />
-              <ReplenishmentPanel v-else-if="active_tab === 'replenishment'" />
+                v-if="page_key === 'maintenance:work'" />
+              <OperationHistoryPanel
+                :active="page_key === active_tab + ':' + view"
+                v-else-if="page_key === 'history:work'" />
+              <StocktakePanel v-else-if="page_key === 'stocktake:work'" />
+              <ReplenishmentPanel
+                :active="page_key === active_tab + ':' + view"
+                v-else-if="page_key === 'replenishment:work'" />
               <!-- ========== 工作区：粘贴文本 / xlsx 文件 ========== -->
-              <div v-else-if="view === 'work'" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-                <BomProjectPanel v-if="active_tab === 'pick'" ref="project_panel"
+              <div v-else-if="page_key.endsWith(':work')"
+                   class="flex min-h-0 flex-1 flex-col gap-3
+                     overflow-y-auto pr-1">
+                <BomProjectPanel v-if="page_key.startsWith('pick:')"
+                  ref="project_panel"
                   :lines="parsed?.lines ?? null" :selections="selections"
                   :file-name="fileName" :disabled="busy || idBusy"
                   @load="load_project" @reset="reset_project" @copies="set_copies"
                   @project="current_project = $event" @plan="plan = $event"
                   @busy="project_busy = $event" />
                 <h3 class="text-[13px] font-extrabold">
-                  {{ active_tab === 'intake' ? 'BOM 入库' : 'BOM 取料' }}
+                  {{ page_key.startsWith('intake:')
+                    ? 'BOM 入库' : 'BOM 取料' }}
                 </h3>
                 <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <textarea v-model="text" class="textarea mono !min-h-[96px] text-[12.5px]" spellcheck="false"
-                            :disabled="project_busy || (active_tab === 'pick' && !!current_project?.cursor)"
+                            :disabled="project_busy
+                              || (page_key.startsWith('pick:')
+                              && !!current_project?.cursor)"
                             placeholder="BOM 内容" />
                   <div class="flex flex-col gap-2">
                     <label class="btn !justify-start border-dashed" :class="{ '!border-[var(--accent)]': busy }">
                       <FileUp :size="15" /> {{ busy ? '解析中…' : '选择 BOM 文件' }}
                       <input type="file" accept=".xlsx,.csv,.txt" class="hidden"
-                        :disabled="busy || project_busy || (active_tab === 'pick' && !!current_project?.cursor)"
+                        :disabled="busy || project_busy
+                          || (page_key.startsWith('pick:')
+                            && !!current_project?.cursor)"
                         @change="onFile" />
                     </label>
                     <span v-if="fileName" class="chip mono !text-[10.5px]" style="color: var(--accent)">
                       ✓ {{ fileName }}
                     </span>
-                    <button class="btn" :disabled="busy || project_busy || (active_tab === 'pick' && !!current_project?.cursor)" @click="runParse">
+                    <button class="btn" :disabled="busy || project_busy
+                          || (page_key.startsWith('pick:')
+                            && !!current_project?.cursor)" @click="runParse">
                       <ScanText :size="15" /> 解析预览
                     </button>
                   </div>
@@ -467,7 +477,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                     <span v-if="fileName" class="mono">（{{ fileName }}）</span>
                   </span>
                   <div class="flex-1" />
-                  <button v-if="active_tab === 'pick'" class="btn"
+                  <button v-if="page_key.startsWith('pick:')" class="btn"
                           :disabled="!parsed || busy || project_busy" @click="runPlan">
                     <Play :size="15" /> 匹配库存并规划
                   </button>
@@ -507,7 +517,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                 </div>
 
                 <!-- 规划结果 -->
-                <template v-if="plan && active_tab === 'pick'">
+                <template v-if="plan && page_key.startsWith('pick:')">
                   <div v-if="plan.choices.length" class="fade-up rounded-xl px-4 py-3"
                        style="border: 1px solid var(--line-strong); background: var(--panel)">
                     <div class="mb-2 text-[13px] font-extrabold" style="color: var(--warn)">
@@ -607,7 +617,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                   </div>
                 </template>
 
-                <div v-if="plan && active_tab === 'pick'"
+                <div v-if="plan && page_key.startsWith('pick:')"
                      class="mt-1 flex items-center gap-2">
                   <div class="flex-1" />
                   <button class="btn btn-ghost" @click="emit('close')">关闭</button>
@@ -686,6 +696,7 @@ const canStart = computed(() => !busy.value && !!plan.value
                 </div>
               </div>
               </div>
+              </template>
               </MotionPanel>
             </DialogPanel>
           </TransitionChild>

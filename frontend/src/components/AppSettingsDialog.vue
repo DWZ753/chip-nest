@@ -146,12 +146,11 @@ watch(() => props.open, (open) => {
       </TransitionChild>
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="dialog-panel-enter"
-                           enter-from="dialog-panel-from"
-                           enter-to="dialog-panel-visible"
+          <TransitionChild as="template"
                            leave="dialog-panel-leave"
                            leave-to="dialog-panel-to">
-            <DialogPanel class="glass-strong flex max-h-[88vh] w-full max-w-md flex-col rounded-2xl p-5">
+            <DialogPanel class="motion-dialog glass-strong flex max-h-[88vh]
+              w-full max-w-md flex-col rounded-2xl p-5">
               <div class="mb-4 flex items-center gap-2.5">
                 <Palette :size="17" style="color: var(--accent)" />
                 <DialogTitle class="text-base font-extrabold">设置</DialogTitle>
@@ -159,10 +158,13 @@ watch(() => props.open, (open) => {
               </div>
 
               <MotionTabs v-model="active_tab" :tabs="tabs" label="设置分组" :disabled="busy || backupBusy" />
-              <MotionPanel>
+              <MotionPanel :active_key="active_tab"
+                           :page_order="tabs.map(tab => tab.key)">
+              <template #default="{ page_key }">
               <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-                <div :key="active_tab" class="panel-reveal flex flex-col gap-4">
-                <div v-if="active_tab === 'appearance'" class="flex flex-col gap-4">
+                <div class="flex flex-col gap-4">
+                <div v-if="page_key === 'appearance'"
+                     class="flex flex-col gap-4">
                 <!-- 外观 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
                   <div class="mb-3 flex items-center gap-2 text-[13px] font-extrabold">
@@ -220,7 +222,8 @@ watch(() => props.open, (open) => {
                 </section>
 
                 </div>
-                <div v-else-if="active_tab === 'hardware'" class="flex flex-col gap-4">
+                <div v-else-if="page_key === 'hardware'"
+                     class="flex flex-col gap-4">
                 <!-- 硬件状态 -->
                 <section class="rounded-2xl px-4 py-3 text-[12.5px]"
                          style="background: var(--panel); border: 1px solid var(--line)">
@@ -250,10 +253,13 @@ watch(() => props.open, (open) => {
                 </section>
 
                 </div>
-                <BackupManagerPanel v-else-if="active_tab === 'backup'"
+                <BackupManagerPanel v-else-if="page_key === 'backup'"
                   @busy="backupBusy = $event" @refresh="loadSummary(); emit('refresh')"
                   @reset="loadSummary(); emit('reset')" />
-                <section v-else-if="active_tab === 'cleanup'" class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
+                <section v-else-if="page_key === 'cleanup'"
+                         class="rounded-2xl p-4"
+                         style="background: var(--panel);
+                           border: 1px solid var(--line)">
                   <h3 class="mb-3 text-[13px] font-extrabold" style="color: var(--danger)">数据清理</h3>
                   <template v-if="!confirming">
                     <button class="btn btn-danger"
@@ -312,6 +318,7 @@ watch(() => props.open, (open) => {
                 </div>
                 </div>
               </div>
+              </template>
               </MotionPanel>
 
               <div class="mt-5 flex justify-end">

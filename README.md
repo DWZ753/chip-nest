@@ -3,17 +3,18 @@
 # ChipNest · 智能元件管家
 
 把电子元件的位置、数量和 BOM 取料放在同一张货架网格里。
-**当前版本 v1.9.1**，修复联网识别的类别、规格与安装方式匹配。
+**当前版本 v1.10.0**，新增连续交互、卡片拖放与共用格移动。
 提供 Windows 安装包，安装后无需配置 Python。
 没有 ESP32 硬件也能使用库存管理，连接状态显示为「模拟」。
 
 [下载安装包](https://github.com/DWZ753/chip-nest/releases/latest) ·
-[版本更新](docs/release-notes-v1.9.1.md) ·
+[版本更新](docs/release-notes-v1.10.0.md) ·
 [反馈问题](https://github.com/DWZ753/chip-nest/issues)
 
 ![v1.9.0 仓库总览](docs/screenshots/overview_v1.9.0.png)
 
-总览与本轮新增功能演示使用 v1.9.0 实际界面和独立演示库存录制。
+总览与下方五项功能演示使用 v1.9.0 实际界面和独立演示库存录制。
+现有演示尚未更新为 v1.10.0 的连续交互与顶部工具栏。
 未变更的流程沿用 v1.8.0 演示。
 箭头指针平滑移动，点击时短暂缩小并显示青色光圈。
 演示先展示入口点击，子菜单打开后平滑放大；选格或退出前缩回全景。
@@ -31,7 +32,7 @@
 ## 安装与升级
 
 1. 从 [Releases](https://github.com/DWZ753/chip-nest/releases/latest)
-   下载 `ChipNest-Setup-1.9.1.exe`。
+   下载 `ChipNest-Setup-1.10.0.exe`。
 2. 升级前关闭正在运行的 ChipNest，再运行安装程序。
 3. 启动后在左上角或「设置 → 关于」核对版本号。
 

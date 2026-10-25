@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Download, ShoppingCart } from '@lucide/vue'
 import { api } from '../api/client'
 import type { BomProject, Replenishment } from '../api/types'
 import { csv_content, download_file } from '../utils/download'
 
+const props = defineProps<{ active?: boolean }>()
 const projects = ref<BomProject[]>([])
 const selected = ref<number[]>([])
 const include_thresholds = ref(true)
@@ -36,12 +37,18 @@ function export_list() {
   download_file('chipnest-补货清单.csv', csv_content(rows), 'text/csv;charset=utf-8')
 }
 
-onMounted(async () => {
+/** @brief Refresh stock and project data while retaining selected projects. */
+async function refresh_projects() {
   try {
     projects.value = (await api.listProjects()).filter(project =>
       !project.plan.complete || project.cursor < project.plan.steps.length)
     await generate()
   } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+}
+
+onMounted(refresh_projects)
+watch(() => props.active, active => {
+  if (active) void refresh_projects()
 })
 </script>
 

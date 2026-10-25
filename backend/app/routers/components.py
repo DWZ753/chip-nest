@@ -173,6 +173,30 @@ async def add_component_slot(
         raise _map_error(exc)
 
 
+@router.patch("/{component_id}/slots", response_model=schemas.ComponentOut)
+async def move_component_slot(
+    component_id: int, body: schemas.SlotMove,
+    session: AsyncSession = Depends(get_session),
+) -> Component:
+    """串行核对源和目标，再原子移动共用格。"""
+    await session.execute(text("BEGIN IMMEDIATE"))
+    component = await _get_component(session, component_id)
+    origin = body.from_position
+    target = body.to_position
+    try:
+        return await stock_service.move_slot(
+            session, component,
+            (origin.zone, origin.layer, origin.slot),
+            (target.zone, target.layer, target.slot),
+        )
+    except (stock_service.PositionBusy, stock_service.SlotBlocked,
+            stock_service.OutOfLayout) as exc:
+        raise _map_error(exc)
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="目标格已被占用") from exc
+
+
 @router.delete("/{component_id}/position",
                response_model=schemas.ComponentOut | None)
 async def delete_component_position(

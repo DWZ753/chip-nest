@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { create_motion } from '../../utils/motion'
+
 const props = defineProps<{
   modelValue: string
   tabs: { key: string; label: string }[]
@@ -10,7 +12,14 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 const root = ref<HTMLElement | null>(null)
 const indicator = ref({ width: '0px', transform: 'translateX(0px)' })
+const motion = create_motion({ x: 0, width: 0 }, values => {
+  indicator.value = {
+    width: `${values.width}px`,
+    transform: `translateX(${values.x}px)`,
+  }
+})
 let observer: ResizeObserver | undefined
+let measured = false
 
 /** 根据按钮实际尺寸定位滑块，兼容字号缩放与窗口尺寸变化。 */
 function measure_indicator() {
@@ -18,10 +27,8 @@ function measure_indicator() {
     '[aria-pressed="true"]',
   )
   if (!button) return
-  indicator.value = {
-    width: `${button.offsetWidth}px`,
-    transform: `translateX(${button.offsetLeft}px)`,
-  }
+  motion.set({ width: button.offsetWidth, x: button.offsetLeft }, !measured)
+  measured = true
 }
 
 watch(() => props.modelValue, async () => {
@@ -32,10 +39,17 @@ watch(() => props.modelValue, async () => {
 onMounted(() => {
   measure_indicator()
   observer = new ResizeObserver(measure_indicator)
-  if (root.value) observer.observe(root.value)
+  if (root.value) {
+    observer.observe(root.value)
+    root.value.querySelectorAll('button').forEach(button =>
+      observer?.observe(button))
+  }
 })
 
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  motion.stop()
+})
 </script>
 
 <template>

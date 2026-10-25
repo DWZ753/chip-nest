@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
   Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot,
 } from '@headlessui/vue'
@@ -12,6 +12,9 @@ import { suggestThreshold } from '../utils/stock'
 import { ArrowLeftRight } from '@lucide/vue'
 import TagEditor from './ui/TagEditor.vue'
 import StepperInput from './ui/StepperInput.vue'
+import MotionField from './ui/motion_field.vue'
+import MotionPanel from './ui/motion_panel.vue'
+import { create_motion } from '../utils/motion'
 
 const props = defineProps<{
   open: boolean
@@ -91,6 +94,33 @@ const datasheet = ref('')
 const appliedParams = ref<Record<string, string>>({})
 // 当前选中的候选下标（-1=没选）：点候选要立刻看到选中的是哪一条
 const pickedIndex = ref(-1)
+const candidate_root = ref<HTMLElement | null>(null)
+const candidate_style = ref({ height: '0px', transform: 'translateY(0px)' })
+const candidate_motion = create_motion({ y: 0, height: 0 }, values => {
+  candidate_style.value = {
+    height: `${values.height}px`,
+    transform: `translateY(${values.y}px)`,
+  }
+})
+let candidate_measured = false
+
+/** @brief Move a single selection surface without changing row geometry. */
+async function measure_candidate() {
+  await nextTick()
+
+  const button = candidate_root.value?.querySelector<HTMLElement>(
+    `[data-candidate-index="${pickedIndex.value}"]`,
+  )
+
+  if (!button) { candidate_measured = false; return }
+
+  candidate_motion.set({ y: button.offsetTop, height: button.offsetHeight },
+    !candidate_measured)
+  candidate_measured = true
+}
+
+watch(() => [pickedIndex.value, candidates.value.length], measure_candidate)
+onBeforeUnmount(candidate_motion.stop)
 
 function resetLookup(seed = '') {
   lookupText.value = seed
@@ -365,7 +395,8 @@ function close() {
             leave="dialog-panel-leave" leave-to="dialog-panel-to"
           >
             <DialogPanel
-              class="glass-strong w-full max-w-md rounded-3xl p-5"
+              class="glass-strong flex max-h-[92vh] w-full max-w-md
+                flex-col rounded-3xl p-5"
             >
               <div class="mb-4 flex items-center gap-2">
                 <div
@@ -385,7 +416,8 @@ function close() {
                 <button class="icon-btn ml-auto !h-8 !w-8" @click="close"><X :size="16" /></button>
               </div>
 
-              <div class="flex flex-col gap-3.5">
+              <MotionPanel active_key="editor" :page_order="['editor']">
+              <div class="flex min-h-0 flex-col gap-3.5 overflow-y-auto pr-1">
                 <section v-if="isShared && primaryComponent"
                          class="flex items-center gap-2 text-[12px]">
                   <span class="chip">
@@ -412,6 +444,9 @@ function close() {
                     </button>
                   </div>
 
+                  <MotionPanel active_key="lookup_metadata"
+                               :page_order="['lookup_metadata']">
+                    <div :key="pickedIndex" class="lookup-meta-entry">
                   <div v-if="lookupNote" class="mt-1.5 text-[11.5px] font-semibold"
                        style="color: var(--success)">{{ lookupNote }}</div>
                   <div v-if="lookupError" class="mt-1.5 text-[11.5px] font-semibold"
@@ -431,16 +466,26 @@ function close() {
                     </a>
                   </div>
 
+                    </div>
+                  </MotionPanel>
+
                   <div v-if="candidates.length > 1"
-                       class="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto pr-1">
-                    <button v-for="(c, i) in candidates" :key="(c.lcsc || 'x') + i"
-                            class="rounded-xl px-2.5 py-1.5 text-left text-[11.5px] transition-colors"
-                            :style="pickedIndex === i
-                              ? 'border: 1.5px solid var(--accent); background: var(--accent-dim)'
-                              : 'border: 1px solid var(--line)'"
+                       ref="candidate_root"
+                       class="candidate-list mt-2 flex max-h-44 flex-col gap-1
+                         overflow-y-auto pr-1">
+                    <span class="candidate-highlight" :style="candidate_style"
+                          aria-hidden="true" />
+                    <button v-for="(c, i) in candidates"
+                            :key="(c.lcsc || 'x') + i"
+                            :data-candidate-index="i"
+                            class="candidate-row rounded-xl px-2.5 py-1.5
+                              text-left text-[11.5px]"
+                            :aria-pressed="pickedIndex === i"
                             @click="applyCandidate(c, i)">
                       <div class="flex items-center gap-2">
-                        <Check v-if="pickedIndex === i" :size="12" style="color: var(--accent)" />
+                        <Check :size="12" class="candidate-check shrink-0"
+                               :class="{ selected: pickedIndex === i }"
+                               style="color: var(--accent)" />
                         <span class="mono font-bold" style="color: var(--accent)">{{ c.lcsc || '—' }}</span>
                         <span class="truncate" :class="pickedIndex === i ? 'font-extrabold' : 'font-semibold'">{{ c.name }}</span>
                         <span class="num ml-auto flex-shrink-0" style="color: var(--text-faint)">存 {{ c.stock }}</span>
@@ -454,33 +499,49 @@ function close() {
 
                 <div>
                   <label class="field-label">名称</label>
+                  <MotionField :value="form.name"
+                               :change_key="pickedIndex">
                   <input v-model="form.name" class="input" maxlength="64"
                          placeholder="如 10k电阻 / 100nF电容 / LED指示灯" />
+                  </MotionField>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
                   <div>
                     <label class="field-label">标称值</label>
-                    <input v-model="form.value" class="input mono" maxlength="32"
+                    <MotionField :value="form.value"
+                               :change_key="pickedIndex">
+                  <input v-model="form.value" class="input mono" maxlength="32"
                            placeholder="10k / 100nF / 22Ω" />
+                  </MotionField>
                   </div>
                   <div>
                     <label class="field-label">封装</label>
-                    <input v-model="form.package" class="input mono" maxlength="32"
+                    <MotionField :value="form.package"
+                               :change_key="pickedIndex">
+                    <input v-model="form.package" class="input mono"
+                           maxlength="32"
                            placeholder="0603 / 0805" />
+                  </MotionField>
                   </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
                   <div>
                     <label class="field-label">厂商料号</label>
-                    <input v-model="form.manufacturer_part" class="input mono"
+                    <MotionField :value="form.manufacturer_part"
+                               :change_key="pickedIndex">
+                  <input v-model="form.manufacturer_part" class="input mono"
                            maxlength="64" placeholder="例：CL05B104KB54PNC" />
+                  </MotionField>
                   </div>
                   <div>
                     <label class="field-label">供应商料号</label>
-                    <input v-model="form.supplier_part" class="input mono"
+                    <MotionField :value="form.supplier_part"
+                               :change_key="pickedIndex">
+                  <input v-model="form.supplier_part" class="input mono"
                            maxlength="40" placeholder="例：C307331" />
+                  </MotionField>
                   </div>
                 </div>
 
@@ -567,6 +628,7 @@ function close() {
                   </button>
                 </div>
               </div>
+              </MotionPanel>
             </DialogPanel>
           </TransitionChild>
         </div>

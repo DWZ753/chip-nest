@@ -384,6 +384,38 @@ async def add_slot(
     return component
 
 
+async def move_slot(
+    session: AsyncSession, component: Component,
+    origin: tuple[int, int, int], destination: tuple[int, int, int],
+) -> Component:
+    """同一事务移动一个附加格，失败不先增后删，也不改变库存。"""
+    target = next((item for item in component.slots
+                   if (item.zone, item.layer, item.slot) == origin), None)
+    if target is None:
+        raise PositionBusy("这个格子不是它的占用格")
+    if origin == destination:
+        return component
+    await validate_position(session, *destination)
+    if (component.zone, component.layer, component.slot) == destination:
+        raise PositionBusy("目标格已被占用")
+    if any((item.zone, item.layer, item.slot) == destination
+           for item in component.slots):
+        raise PositionBusy("目标格已被占用")
+    await ensure_position_free(session, *destination, exclude_id=component.id)
+    before = undo_service.snapshot(component)
+    target.zone, target.layer, target.slot = destination
+    detail = (f"{component.name} 移动占用格 {_position(*origin)} → "
+              f"{_position(*destination)}")
+    session.add(Transaction(kind="adjust", delta=0, source="ui", detail=detail))
+    await session.flush()
+    await undo_service.record(
+        session, detail,
+        {"op": "snapshot", "id": component.id, "before": before},
+    )
+    await session.commit()
+    return component
+
+
 async def remove_slot(
     session: AsyncSession, component: Component, zone: int, layer: int, slot: int,
     source: str = "ui",

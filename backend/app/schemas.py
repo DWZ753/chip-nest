@@ -228,6 +228,13 @@ class SlotAdd(BaseModel):
     slot: int = Field(ge=0)
 
 
+class SlotMove(BaseModel):
+    """将已有附加格移到目标位置，库存与占用格数量保持不变。"""
+
+    from_position: SlotAdd
+    to_position: SlotAdd
+
+
 class ComponentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

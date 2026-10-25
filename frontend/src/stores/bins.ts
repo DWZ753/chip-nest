@@ -318,6 +318,14 @@ export const useBinsStore = defineStore('bins', () => {
     return updated
   }
 
+  /** @brief Move an existing shared position in one backend transaction. */
+  async function moveSlot(id: number, from: BinPosition, to: BinPosition) {
+    const updated = await api.moveComponentSlot(id, from, to)
+
+    upsert(updated)
+    return updated
+  }
+
   async function removeSlot(id: number, pos: BinPosition) {
     const updated = await api.removeComponentSlot(id, pos)
     upsert(updated)
@@ -430,7 +438,8 @@ export const useBinsStore = defineStore('bins', () => {
     navigateSearch,
     freeSlots, upsert,
     updateZoneName,
-    moveComponent, swapComponents, addSlot, removeSlot, blockAt, unblockAt, undoLast,
+    moveComponent, swapComponents, addSlot, moveSlot, removeSlot,
+    blockAt, unblockAt, undoLast,
     mergeComponents,
     removePosition, adjustStock, relocateOrphans, setGuidePosition, slotOwner,
     posInLayout, blockedKeys,

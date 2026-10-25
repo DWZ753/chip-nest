@@ -5,6 +5,8 @@ import {
 } from '@headlessui/vue'
 import { LayoutGrid, Save, X } from '@lucide/vue'
 
+import MotionPanel from './ui/motion_panel.vue'
+
 import { api } from '../api/client'
 import { useBinsStore, zoneGrid, zoneLayers } from '../stores/bins'
 
@@ -118,18 +120,18 @@ async function saveLayout() {
       </TransitionChild>
       <div class="fixed inset-0 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild as="template" enter="dialog-panel-enter"
-                           enter-from="dialog-panel-from"
-                           enter-to="dialog-panel-visible"
+          <TransitionChild as="template"
                            leave="dialog-panel-leave"
                            leave-to="dialog-panel-to">
-            <DialogPanel class="glass-strong flex max-h-[88vh] w-full max-w-xl flex-col rounded-2xl p-5">
+            <DialogPanel class="motion-dialog glass-strong flex
+              max-h-[88vh] w-full max-w-xl flex-col rounded-2xl p-5">
               <div class="mb-4 flex items-center gap-2.5">
                 <LayoutGrid :size="17" style="color: var(--accent)" />
                 <DialogTitle class="text-base font-extrabold">仓库布局</DialogTitle>
                 <button class="icon-btn ml-auto !h-8 !w-8" @click="emit('close')"><X :size="16" /></button>
               </div>
 
+              <MotionPanel active_key="layout" :page_order="['layout']">
               <div class="flex flex-col gap-4 overflow-y-auto pr-1">
                 <!-- 网格尺寸与区名 -->
                 <section class="rounded-2xl p-4" style="background: var(--panel); border: 1px solid var(--line)">
@@ -151,7 +153,8 @@ async function saveLayout() {
                     <button class="btn ml-auto !px-3 !py-1 text-xs" :disabled="form.zone_count >= 9"
                             @click="addZone">＋ 新建区</button>
                   </div>
-                  <div class="mt-2 flex flex-col gap-2">
+                  <TransitionGroup name="zone-row" tag="div"
+                                   class="mt-2 flex flex-col gap-2">
                     <div v-for="z in form.zone_count" :key="z"
                          class="grid items-end gap-2"
                          :style="{ gridTemplateColumns: 'minmax(0,1fr) 62px 62px 62px 74px' }">
@@ -181,7 +184,7 @@ async function saveLayout() {
                         {{ confirmZone === z ? '确认删除' : '删除' }}
                       </button>
                     </div>
-                  </div>
+                  </TransitionGroup>
                   <div class="mt-3 flex items-center gap-2">
                     <span v-if="msg" class="text-[12.5px] font-semibold"
                           :style="msg === '已保存' ? 'color: var(--success)' : 'color: var(--danger)'">{{ msg }}</span>
@@ -192,6 +195,8 @@ async function saveLayout() {
                   </div>
                 </section>
               </div>
+
+              </MotionPanel>
 
               <div class="mt-4 flex justify-end">
                 <button class="btn btn-ghost" @click="emit('close')">关闭</button>

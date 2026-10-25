@@ -11,6 +11,10 @@ import {
 import { usePickerStore } from '../stores/picker'
 import { useTheme } from '../stores/theme'
 import BinCard from './BinCard.vue'
+import GridDragPreview from './grid_drag_preview.vue'
+import MotionPanel from './ui/motion_panel.vue'
+import { use_grid_drag } from '../composables/use_grid_drag'
+import { create_motion } from '../utils/motion'
 
 const emit = defineEmits<{
   edit: [ComponentItem, BinPosition]
@@ -20,7 +24,24 @@ const emit = defineEmits<{
 const rootEl = ref<HTMLElement | null>(null)
 
 // ---------- 批量选择模式 ----------
-const batchMode = ref(false)
+const operation_modes = [
+  { key: 'move', label: '移动', exit: '退出移动', icon: Move },
+  { key: 'merge', label: '合并格', exit: '退出合并', icon: Combine },
+  { key: 'block', label: '停用格', exit: '退出停用', icon: Ban },
+  { key: 'batch', label: '多选', exit: '退出多选', icon: Check },
+] as const
+
+/** One active tool owns grid input and the floating operation bar. */
+type GridMode = typeof operation_modes[number]['key']
+
+const active_mode = ref<GridMode | null>(null)
+const operation_order = ['tools',
+  ...operation_modes.map(mode => mode.key), 'picker', 'result']
+const moveMode = computed(() => active_mode.value === 'move')
+const mergeMode = computed(() => active_mode.value === 'merge')
+const blockMode = computed(() => active_mode.value === 'block')
+const batchMode = computed(() => active_mode.value === 'batch')
+
 interface SelectedPosition {
   component_id: number
   pos: BinPosition
@@ -39,16 +60,30 @@ const confirmDelete = ref(false)
 const deleteBusy = ref(false)
 let confirmTimer: ReturnType<typeof setTimeout> | undefined
 
-function enterBatch() {
-  batchMode.value = true
-  selectedPositions.value = new Map()
-}
+/**
+ * @brief Change the single active tool and discard its transient selection.
+ * @param next Tool to activate, or null to leave the operation workflow.
+ */
+function set_mode(next: GridMode | null) {
+  if (mode_busy.value) return
 
-function exitBatch() {
-  batchMode.value = false
+  grid_drag.cancel()
+  active_mode.value = next
+  pickedId.value = null
+  pickedSlot.value = null
+  mergeSourceId.value = null
   selectedPositions.value = new Map()
   confirmDelete.value = false
+  moveNote.value = null
   window.clearTimeout(confirmTimer)
+  window.clearTimeout(noteTimer)
+}
+
+/** @brief The same entry selects, switches or exits an operation. */
+function toggle_mode(next: GridMode) {
+  if (picker.active) return
+
+  set_mode(active_mode.value === next ? null : next)
 }
 
 function positionsInZone(zone: number): SelectedPosition[] {
@@ -115,6 +150,7 @@ function onCard(comp: ComponentItem, isShared = false, pos?: BinPosition) {
     picker.warn('该格已被占用')
     return
   }
+  if (mode_busy.value || blockMode.value) return
   if (mergeMode.value) {
     void mergePickCard(comp, isShared, pos)
     return
@@ -152,8 +188,8 @@ async function deleteSelected() {
     }
   } finally {
     await bins.refreshAll().catch(() => undefined)
-    exitBatch()
     deleteBusy.value = false
+    set_mode(null)
   }
 }
 
@@ -203,10 +239,83 @@ watch(() => bins.searchNavigationTick, async () => {
 })
 
 // ---------- 移动模式：点按拿起 → 点空格放下 ----------
-const moveMode = ref(false)
 const pickedId = ref<number | null>(null)
 const moveNote = ref<string | null>(null)          // 搬家结果/提示
 let noteTimer: ReturnType<typeof setTimeout> | undefined
+const grid_drag = use_grid_drag(rootEl,
+  computed(() => moveMode.value && !picker.active), flashNote)
+
+const toolbar_slot = ref<HTMLElement | null>(null)
+const toolbar_frame = ref<HTMLElement | null>(null)
+const toolbar_width = ref<number | null>(null)
+const toolbar_key = computed(() => picker.active ? 'picker'
+  : active_mode.value ?? (moveNote.value ? 'result' : 'tools'))
+const toolbar_motion = create_motion({ width: 0 }, values => {
+  toolbar_width.value = values.width
+})
+let toolbar_observer: ResizeObserver | undefined
+let toolbar_content_observer: MutationObserver | undefined
+
+/** @brief Measure real controls and text, excluding flex-grow empty space. */
+function toolbar_content_width(row: HTMLElement): number {
+  const children = Array.from(row.children) as HTMLElement[]
+  const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0
+
+  return children.reduce((sum, child) => sum +
+    (child.classList.contains('grid-toolbar-context')
+      ? toolbar_content_width(child)
+      : Math.max(child.offsetWidth, child.scrollWidth)), 0) +
+    Math.max(0, children.length - 1) * gap
+}
+
+/** @brief Keep one right anchor while the toolbar changes its content. */
+function measure_toolbar() {
+  const frame = toolbar_frame.value
+  const slot = toolbar_slot.value
+
+  if (!frame || !slot) return
+
+  const style = getComputedStyle(frame)
+  const chrome = Number.parseFloat(style.paddingLeft) +
+    Number.parseFloat(style.paddingRight) +
+    Number.parseFloat(style.borderLeftWidth) +
+    Number.parseFloat(style.borderRightWidth)
+  const page = frame.querySelector(
+    `[data-motion-page="${toolbar_key.value}"]`,
+  )
+  const row = page?.firstElementChild as HTMLElement | null
+
+  if (!row) return
+
+  const width = Math.min(slot.clientWidth,
+    Math.ceil(toolbar_content_width(row) + chrome))
+
+  toolbar_motion.set({ width }, toolbar_width.value === null)
+}
+
+watch(toolbar_key, async () => {
+  await nextTick()
+  measure_toolbar()
+})
+
+onMounted(() => {
+  measure_toolbar()
+  toolbar_observer = new ResizeObserver(measure_toolbar)
+  if (toolbar_slot.value) toolbar_observer.observe(toolbar_slot.value)
+  toolbar_content_observer = new MutationObserver(measure_toolbar)
+  if (toolbar_frame.value) {
+    toolbar_content_observer.observe(toolbar_frame.value, {
+      subtree: true, childList: true, characterData: true,
+    })
+  }
+})
+
+onBeforeUnmount(() => {
+  toolbar_observer?.disconnect()
+  toolbar_content_observer?.disconnect()
+  toolbar_motion.stop()
+})
+
 
 const picked = computed<ComponentItem | null>(
   () => bins.components.find((c) => c.id === pickedId.value) ?? null,
@@ -221,24 +330,6 @@ function flashNote(text: string) {
 // 与操作流水、引导条一致的口径：区/层/格（格从 0 起）
 function posText(pos: BinPosition): string {
   return `${pos.zone}区/${pos.layer}层/${pos.slot}格`
-}
-
-function enterMove() {
-  if (batchMode.value) exitBatch()
-  moveMode.value = true
-  pickedId.value = null
-  moveNote.value = null
-}
-
-function exitMove() {
-  moveMode.value = false
-  pickedId.value = null
-  pickedSlot.value = null
-}
-
-function toggleMove() {
-  if (moveMode.value) exitMove()
-  else enterMove()
 }
 
 // 移动模式下点卡片：拿起 / 放回 / 与手上的互换
@@ -256,51 +347,26 @@ function pickCard(comp: ComponentItem) {
 // 手上拿着一个，再点另一个有料的格子 -> 两个格子互换
 async function swapWith(target: ComponentItem) {
   const held = picked.value
+
   if (!held || held.id === target.id) return
-  try {
-    const result = await bins.swapComponents(held.id, target.id)
-    pickedId.value = null
-    flashNote(`已把「${result.a.name}」与「${result.b.name}」互换`)
-  } catch (e) {
-    pickedId.value = null
-    flashNote(`互换失败：${e instanceof Error ? e.message : String(e)}`)
-  }
+
+  pickedId.value = null
+  await grid_drag.place(held, held, target)
 }
 
-// 移动模式下点空格：放下手里的那张卡
+/** @brief Click and keyboard placement use the same landing as pointer drag. */
 async function placeAt(pos: BinPosition) {
-  // 手里拿的是"共用格"：把它从旧格子挪到这一格（库存与元件都不变）
-  const held = pickedSlot.value
-  if (held) {
-    try {
-      await bins.addSlot(held.compId, pos)
-      await bins.removeSlot(held.compId, held.pos)
-      pickedSlot.value = null
-      flashNote(`已把共用格从 ${posText(held.pos)} 挪到 ${posText(pos)}`)
-    } catch (e) {
-      pickedSlot.value = null
-      flashNote(`挪动失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-    return
-  }
-  const comp = picked.value
-  if (!comp) {
-    flashNote('未拿起格子')
-    return
-  }
-  const from = { zone: comp.zone, layer: comp.layer, slot: comp.slot }
-  if (positionKey(from) === positionKey(pos)) {
-    pickedId.value = null
-    return
-  }
-  try {
-    await bins.moveComponent(comp.id, pos)
-    pickedId.value = null
-    flashNote(`已把「${comp.name}」从 ${posText(from)} 搬到 ${posText(pos)}`)
-  } catch (e) {
-    pickedId.value = null
-    flashNote(`搬家失败：${e instanceof Error ? e.message : String(e)}`)
-  }
+  const shared = pickedSlot.value
+  const component = shared
+    ? bins.components.find(item => item.id === shared.compId) : picked.value
+
+  if (!component) { flashNote('未拿起格子'); return }
+
+  const from = shared?.pos ?? component
+
+  pickedId.value = null
+  pickedSlot.value = null
+  await grid_drag.place(component, from, pos)
 }
 
 function onEmptyClick(pos: BinPosition) {
@@ -308,14 +374,14 @@ function onEmptyClick(pos: BinPosition) {
     picker.confirm(pos)
     return
   }
+  if (mode_busy.value) return
   if (mergeMode.value) void mergeClickEmpty(pos)
   else if (moveMode.value) void placeAt(pos)
   else if (blockMode.value) void toggleBlockAt(pos)
-  else emit('create', pos)
+  else if (!batchMode.value) emit('create', pos)
 }
 
 // ---------- 合并格模式：几个格子共用一个元件 ----------
-const mergeMode = ref(false)
 const mergeSourceId = ref<number | null>(null)
 const mergeBusy = ref(false)
 const mergeSource = computed<ComponentItem | null>(
@@ -327,6 +393,12 @@ const heldId = computed(() =>
 
 // 移动模式下单独拿起的"共用格"（附加格）：它是一格，不是一个元件
 const pickedSlot = ref<{ compId: number; pos: BinPosition } | null>(null)
+watch(() => grid_drag.state.value, current => {
+  if (!current) return
+  pickedId.value = null
+  pickedSlot.value = null
+  moveNote.value = null
+})
 
 function isSlotHeld(cell: CellEntry): boolean {
   const held = pickedSlot.value
@@ -344,24 +416,6 @@ function toggleSlotPick(comp: ComponentItem, pos: BinPosition) {
   pickedId.value = null
   moveNote.value = null
   pickedSlot.value = { compId: comp.id, pos }
-}
-
-function enterMerge() {
-  if (batchMode.value) exitBatch()
-  if (moveMode.value) exitMove()
-  mergeMode.value = true
-  mergeSourceId.value = null
-  moveNote.value = null
-}
-
-function exitMerge() {
-  mergeMode.value = false
-  mergeSourceId.value = null
-}
-
-function toggleMerge() {
-  if (mergeMode.value) exitMerge()
-  else enterMerge()
 }
 
 // 先选主格，再点相同元件合并；点自己的共用卡解除那一格。
@@ -417,51 +471,57 @@ async function mergeClickEmpty(pos: BinPosition) {
   }
 }
 
+/** @brief Release a held selection before leaving its mode. */
 function onEsc(ev: KeyboardEvent) {
-  if (ev.key !== 'Escape') return
+  if (ev.key !== 'Escape' || ev.defaultPrevented) return
   if (picker.active) {
     picker.cancel()
     return
   }
-  if (mergeMode.value) {
-    if (mergeSourceId.value !== null) mergeSourceId.value = null
-    else exitMerge()
+  if (mode_busy.value) return
+  if (mergeMode.value && mergeSourceId.value !== null) {
+    mergeSourceId.value = null
     return
   }
-  if (blockMode.value) {
-    blockMode.value = false
-    return
-  }
-  if (pickedSlot.value) {
+  if (moveMode.value && pickedSlot.value) {
     const pos = pickedSlot.value.pos
+
     pickedSlot.value = null
     flashNote(`已放回 ${posText(pos)}`)
     return
   }
-  if (pickedId.value !== null) {
+  if (moveMode.value && pickedId.value !== null) {
     const name = picked.value?.name ?? ''
+
     pickedId.value = null
     flashNote(`已把「${name}」放回原处`)
-  } else if (moveMode.value) {
-    exitMove()
+    return
   }
+  set_mode(null)
 }
 
 onMounted(() => window.addEventListener('keydown', onEsc))
 onBeforeUnmount(() => window.removeEventListener('keydown', onEsc))
 
 // ---------- 停用格模式：把坏掉的格子标记为不可用 ----------
-const blockMode = ref(false)
+const block_busy = ref(false)
+const mode_busy = computed(() => grid_drag.busy.value || mergeBusy.value ||
+  block_busy.value || deleteBusy.value)
 
-function toggleBlockMode() {
-  if (batchMode.value) exitBatch()
-  if (moveMode.value) exitMove()
-  if (mergeMode.value) exitMerge()
-  blockMode.value = !blockMode.value
-  moveNote.value = null
-}
+watch(() => picker.active, active => {
+  if (active) set_mode(null)
+})
+
+onBeforeUnmount(() => {
+  window.clearTimeout(confirmTimer)
+  window.clearTimeout(noteTimer)
+})
 
 async function toggleBlockAt(pos: BinPosition) {
+  if (block_busy.value) return
+
+  block_busy.value = true
+
   const blocked = bins.blockedKeys.has(positionKey(pos))
   try {
     if (blocked) {
@@ -473,6 +533,8 @@ async function toggleBlockAt(pos: BinPosition) {
     }
   } catch (e) {
     flashNote(`操作失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    block_busy.value = false
   }
 }
 
@@ -582,123 +644,117 @@ async function fixOrphans() {
 </script>
 
 <template>
-  <div ref="rootEl" class="fade-up mx-auto flex w-[min(1400px,calc(100%-24px))] flex-col gap-4 pb-16">
-    <!-- 批量操作条 -->
-    <div class="flex items-center justify-end gap-2">
-      <template v-if="batchMode">
-        <span class="chip num">已选 {{ selectedPositions.size }} 格</span>
-        <button class="btn !py-1.5 text-xs" @click="selectAll">全选</button>
-        <button class="btn !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="clearSelection">清空选择</button>
-        <button class="btn btn-danger !py-1.5 text-xs" :disabled="selectedIds.size === 0" @click="deleteSelected">
-          <Trash2 :size="13" /> {{ confirmDelete ? '确认删除？' : '删除所选' }}
-        </button>
-        <button class="btn btn-ghost !py-1.5 text-xs" @click="exitBatch">退出多选</button>
-      </template>
-      <template v-else>
-        <button class="btn !py-1.5 text-xs" :class="moveMode ? 'btn-primary' : ''"
-                title="搬家／互换" @click="toggleMove">
-          <Move :size="13" /> {{ moveMode ? '退出移动' : '移动' }}
-        </button>
-        <button class="btn !py-1.5 text-xs" :class="mergeMode ? 'btn-primary' : ''"
-                title="多个格子共用一个元件" @click="toggleMerge">
-          <Combine :size="13" /> {{ mergeMode ? '退出合并' : '合并格' }}
-        </button>
-        <button class="btn !py-1.5 text-xs" :class="blockMode ? 'btn-primary' : ''"
-                title="把坏掉的格子标记为不可用" @click="toggleBlockMode">
-          <Ban :size="13" /> {{ blockMode ? '退出停用' : '停用格' }}
-        </button>
-        <button class="btn !py-1.5 text-xs" title="批量选择后可删除" @click="enterBatch">
-          ☑ 多选
-        </button>
-      </template>
-    </div>
+  <div ref="rootEl" :data-grid-mode="active_mode ?? 'none'"
+       class="fade-up mx-auto flex w-[min(1400px,calc(100%-24px))]
+         flex-col gap-4 pb-16"
+       :class="{ 'grid-drag-active': !!grid_drag.state.value }"
+       @click.capture="grid_drag.capture_click">
+    <GridDragPreview :controller="grid_drag" />
+    <!-- One sticky surface owns both tool selection and active controls. -->
+    <div ref="toolbar_slot" class="grid-toolbar-slot">
+      <section ref="toolbar_frame" class="glass-panel grid-toolbar"
+               :data-operation-mode="toolbar_key" aria-label="货架工具栏"
+               :style="{ width: toolbar_width === null
+                 ? 'max-content' : `${toolbar_width}px`,
+                 borderColor: toolbar_key === 'tools' ? 'var(--line)'
+                   : blockMode ? 'var(--warn)' : 'var(--accent)' }">
+        <MotionPanel :active_key="toolbar_key" :page_order="operation_order">
+        <template #default="{ page_key }">
+          <nav v-if="page_key === 'tools'"
+               class="grid-toolbar-menu" aria-label="货架操作模式">
+            <button v-for="mode in operation_modes" :key="mode.key"
+                    class="btn !py-1.5 text-xs" :disabled="mode_busy"
+                    @click="toggle_mode(mode.key)">
+              <component :is="mode.icon" :size="13" /> {{ mode.label }}
+            </button>
+          </nav>
 
-    <!-- 选格中：点一个空格 -->
-    <Transition name="notice">
-    <div
-      v-if="picker.active"
-      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
-      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
-    >
-      <Crosshair :size="16" style="color: var(--accent)" />
-      <span class="chip" style="color: var(--accent); border-color: var(--accent)">选格中</span>
-      <span v-if="picker.error" class="text-[12.5px] font-semibold" style="color: var(--danger)">
-        {{ picker.error }}
-      </span>
-      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="picker.cancel()">取消</button>
-    </div>
-    </Transition>
+          <div v-else class="grid-toolbar-page" role="group"
+               aria-label="货架操作">
+            <span class="flex shrink-0 items-center gap-2 text-[13px]
+                         font-semibold">
+              <component
+                :is="operation_modes.find(mode => mode.key === page_key)?.icon
+                  ?? (page_key === 'picker' ? Crosshair : Check)" :size="15"
+                :style="{ color: page_key === 'block'
+                  ? 'var(--warn)' : 'var(--accent)' }" />
+              {{ operation_modes.find(mode => mode.key === page_key)?.label
+                ?? (page_key === 'picker' ? '选格中' : '操作结果') }}
+            </span>
 
-    <!-- 停用格：点空格标记 / 点不可用格恢复 -->
-    <Transition name="notice">
-    <div
-      v-if="blockMode"
-      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
-      style="border-color: color-mix(in srgb, var(--warn) 55%, var(--line))"
-    >
-      <Ban :size="16" style="color: var(--warn)" />
-      <span class="chip" style="color: var(--warn); border-color: var(--warn)">停用格</span>
-      <span class="chip num">已停用 {{ bins.blockedKeys.size }} 格</span>
-      <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">{{ moveNote }}</span>
-      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="blockMode = false">退出停用</button>
-    </div>
-    </Transition>
+            <div class="grid-toolbar-context">
+              <template v-if="page_key === 'move'">
+                <span class="chip shrink-0"
+                      :data-drag-state="grid_drag.state.value?.phase
+                        ?? 'ready'">
+                  {{ grid_drag.busy.value ? '放置中' : '移动中' }}
+                </span>
+                <span v-if="grid_drag.state.value" class="truncate">
+                  {{ grid_drag.state.value.component.name }}
+                </span>
+                <span v-else-if="picked" class="truncate">
+                  {{ picked.name }} · {{ posText(picked) }}
+                </span>
+                <span v-else-if="pickedSlot" class="truncate">
+                  共用格 {{ posText(pickedSlot.pos) }}
+                </span>
+                <span v-else style="color: var(--text-dim)">未选格子</span>
+              </template>
 
-    <!-- 移动中：拿着什么，一眼可见 -->
-    <Transition name="notice">
-    <div
-      v-if="moveMode && (picked || pickedSlot)"
-      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
-      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
-    >
-      <Move :size="16" style="color: var(--accent)" />
-      <span class="chip" style="color: var(--accent); border-color: var(--accent)">移动中</span>
-      <span v-if="picked" class="text-[13px] font-semibold">
-        已拿起「{{ picked.name }}」（{{ posText({ zone: picked.zone, layer: picked.layer, slot: picked.slot }) }}）
-      </span>
-      <span v-else-if="pickedSlot" class="text-[13px] font-semibold">
-        拿着共用格 {{ posText(pickedSlot.pos) }}
-      </span>
-      <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">{{ moveNote }}</span>
-      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="exitMove">退出移动</button>
-    </div>
-    </Transition>
+              <template v-else-if="page_key === 'merge'">
+                <template v-if="mergeSource">
+                  <span class="truncate">
+                    主格 {{ mergeSource.name }} · {{ posText(mergeSource) }}
+                  </span>
+                  <span class="chip num shrink-0">
+                    共 {{ mergeSource.slot_count }} 格
+                  </span>
+                </template>
+                <span v-else style="color: var(--text-dim)">未选主格</span>
+              </template>
 
-    <!-- 合并格：选一个主格，再点空格并进来；点共用卡解除 -->
-    <Transition name="notice" mode="out-in">
-    <div
-      v-if="mergeMode"
-      key="merge"
-      class="glass-panel flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
-      style="border-color: color-mix(in srgb, var(--accent) 55%, var(--line))"
-    >
-      <Combine :size="16" style="color: var(--accent)" />
-      <span class="chip" style="color: var(--accent); border-color: var(--accent)">合并中</span>
-      <template v-if="mergeSource">
-        <span class="text-[13px] font-semibold">
-          主格「{{ mergeSource.name }}」（{{ posText({ zone: mergeSource.zone, layer: mergeSource.layer, slot: mergeSource.slot }) }}）
-        </span>
-        <span class="chip num">共 {{ mergeSource.slot_count }} 格</span>
-      </template>
-      <span v-else class="text-[13px] font-semibold" style="color: var(--text-dim)">未选主格</span>
-      <span v-if="moveNote" class="text-[12.5px] font-semibold" style="color: var(--success)">
-        {{ moveNote }}
-      </span>
-      <button class="btn btn-ghost ml-auto !py-1.5 text-xs" @click="exitMerge">退出合并</button>
-    </div>
+              <span v-else-if="page_key === 'block'" class="chip num shrink-0">
+                已停用 {{ bins.blockedKeys.size }} 格
+              </span>
 
-    <!-- 搬家结果 -->
-    <div
-      v-else-if="moveNote"
-      key="result"
-      class="glass-panel flex items-center gap-3 rounded-2xl px-4 py-2.5"
-      style="border-color: color-mix(in srgb, var(--accent) 45%, var(--line))"
-    >
-      <Check :size="16" style="color: var(--success)" />
-      <span class="text-[13px]">{{ moveNote }}</span>
-      <button class="icon-btn ml-auto !h-7 !w-7" title="关闭" @click="moveNote = null"><X :size="13" /></button>
+              <template v-else-if="page_key === 'batch'">
+                <span class="chip num shrink-0">
+                  已选 {{ selectedPositions.size }} 格
+                </span>
+                <button class="btn shrink-0 !py-1.5 text-xs"
+                        :disabled="mode_busy" @click="selectAll">全选</button>
+                <button class="btn shrink-0 !py-1.5 text-xs"
+                        :disabled="mode_busy || selectedIds.size === 0"
+                        @click="clearSelection">清空选择</button>
+                <button class="btn btn-danger shrink-0 !py-1.5 text-xs"
+                        :disabled="mode_busy || selectedIds.size === 0"
+                        @click="deleteSelected">
+                  <Trash2 :size="13" />
+                  {{ confirmDelete ? '确认删除？' : '删除所选' }}
+                </button>
+              </template>
+
+              <span v-if="page_key === 'picker' && picker.error"
+                    class="truncate" style="color: var(--danger)">
+                {{ picker.error }}
+              </span>
+              <span v-else-if="moveNote" class="truncate"
+                    style="color: var(--success)">{{ moveNote }}</span>
+            </div>
+
+            <span v-if="mode_busy" class="chip shrink-0">处理中</span>
+            <button class="btn btn-ghost shrink-0 !py-1.5 text-xs"
+                    :disabled="mode_busy"
+                    @click="page_key === 'picker'
+                      ? picker.cancel() : set_mode(null)">
+              {{ operation_modes.find(mode => mode.key === page_key)?.exit
+                ?? (page_key === 'picker' ? '取消' : '关闭') }}
+            </button>
+          </div>
+        </template>
+        </MotionPanel>
+      </section>
     </div>
-    </Transition>
 
     <!-- 游离元件提示：布局缩容后超出网格 -->
     <div
@@ -784,6 +840,9 @@ async function fixOrphans() {
               <BinCard
                 v-if="cell.kind === 'card' || cell.kind === 'shared'"
                 :comp="cell.comp!"
+                v-bind="grid_drag.attributes(cell)"
+                :class="grid_drag.classes(cell)"
+                @pointerdown="grid_drag.start($event, cell)"
                 :grid-style="cellStyle(cell)"
                 :col-span="cell.colSpan"
                 :row-span="cell.rowSpan"
@@ -806,11 +865,13 @@ async function fixOrphans() {
               <!-- 不可用格：坏掉的格子，任何模式都不会往里放东西 -->
               <div
                 v-else-if="cell.kind === 'blocked'"
+                v-bind="grid_drag.attributes(cell)"
                 class="card-blocked grid min-h-[96px] cursor-pointer place-items-center rounded-[14px]"
                 :style="cellStyle(cell)"
                 :class="{
                   'blocked-active': blockMode,
                   'card-dimmed': bins.matchedIds !== null,
+                  ...grid_drag.classes(cell),
                 }"
                 :title="blockMode ? '恢复可用' : '不可用'"
                 @click="blockMode && toggleBlockAt(cell.pos)"
@@ -820,9 +881,12 @@ async function fixOrphans() {
               <!-- 空位：虚线占位卡，点击新建 -->
               <button
                 v-else
+                v-bind="grid_drag.attributes(cell)"
                 class="card-empty grid min-h-[96px] place-items-center rounded-[14px]"
                 :style="cellStyle(cell)"
-                :class="{ 'move-ready': !!heldId || !!pickedSlot || picker.active }"
+                :class="{
+                  'move-ready': !!heldId || !!pickedSlot || picker.active,
+                  ...grid_drag.classes(cell) }"
                 :title="picker.active || heldId || pickedSlot ? '选它' : '空位'"
                 @click="onEmptyClick(cell.pos)"
               >

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { History, Undo2 } from '@lucide/vue'
 import { api } from '../api/client'
 import type { TransactionRow } from '../api/types'
 import { useBinsStore } from '../stores/bins'
 
+const props = defineProps<{ active?: boolean }>()
 const bins = useBinsStore()
 const loading = ref(false)
 const transactions = ref<TransactionRow[]>([])
@@ -51,7 +52,8 @@ const kindLabel: Record<string, { text: string; color: string }> = {
   project: { text: '项目', color: 'var(--accent-strong)' },
 }
 
-onMounted(async () => {
+/** @brief Refresh records when a cached history page is revisited. */
+async function refresh_history() {
   loading.value = true
   try {
     transactions.value = await api.listTransactions(30)
@@ -61,6 +63,11 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(refresh_history)
+watch(() => props.active, active => {
+  if (active) void refresh_history()
 })
 </script>
 

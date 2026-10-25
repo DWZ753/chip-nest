@@ -102,6 +102,13 @@ export const api = {
     request<ComponentItem>(`/api/v1/components/${id}/slots`, {
       method: 'POST', body: JSON.stringify(pos),
     }),
+  moveComponentSlot: (id: number,
+    from: { zone: number; layer: number; slot: number },
+    to: { zone: number; layer: number; slot: number }) =>
+    request<ComponentItem>(`/api/v1/components/${id}/slots`, {
+      method: 'PATCH',
+      body: JSON.stringify({ from_position: from, to_position: to }),
+    }),
   removeComponentSlot: (id: number, pos: { zone: number; layer: number; slot: number }) =>
     request<ComponentItem>(`/api/v1/components/${id}/slots` + qs({ ...pos }), { method: 'DELETE' }),
 

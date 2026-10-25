@@ -803,7 +803,7 @@ html.light .chip-pkg { color: #8a6a3c; }
 .dialog-panel-visible { opacity: 1; transform: none; }
 .dialog-panel-to { opacity: 0; transform: translateY(12px) scale(0.98); }
 
-/* 分组滑块按按钮实际宽度移动，内容立即替换后淡入。 */
+/* 分组滑块与正文使用同一套可中断弹簧参数。 */
 .motion-tabs {
   position: relative;
   isolation: isolate;
@@ -824,8 +824,6 @@ html.light .chip-pkg { color: #8a6a3c; }
   border-radius: 8px;
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   box-shadow: 0 3px 12px -6px var(--accent);
-  transition: transform 0.3s var(--motion-out),
-    width 0.3s var(--motion-out);
   pointer-events: none;
 }
 .motion-tab {
@@ -850,21 +848,21 @@ html.light .motion-tab[aria-pressed='true'] { color: #fff; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-@keyframes panel-reveal {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: none; }
-}
-.panel-reveal { animation: panel-reveal 0.26s var(--motion-out); }
 .motion-panel {
+  position: relative;
   min-height: 0;
   flex-shrink: 1;
-  overflow: hidden;
-  transition: height 0.34s var(--motion-out);
+  overflow: clip;
 }
-.motion-panel-content {
+.motion-panel-page {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: flex;
+  width: 100%;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* 只在货架首次呈现及格子内容变化时动，不循环播放。 */
@@ -932,3 +930,142 @@ html.light .motion-tab[aria-pressed='true'] { color: #fff; }
     box-shadow: 0 0 0 2px var(--accent), var(--glow-primary);
   }
 }
+
+
+/* Persistent inputs receive clipped text motion, never duplicate controls. */
+.motion-field { position: relative; min-width: 0; }
+.motion-field-masked > input,
+.motion-field-masked > input::placeholder { color: transparent; }
+.motion-field-viewport {
+  position: absolute;
+  inset: 1px;
+  overflow: clip;
+  border-radius: 9px;
+  pointer-events: none;
+}
+.motion-field-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text);
+}
+.candidate-list { position: relative; isolation: isolate; }
+.candidate-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 4px;
+  border: 1.5px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-dim);
+  pointer-events: none;
+}
+.candidate-row {
+  position: relative;
+  flex-shrink: 0;
+  border: 1.5px solid var(--line);
+}
+.candidate-row[aria-pressed='true'] { border-color: transparent; }
+.candidate-check { opacity: 0; transition: opacity .12s ease; }
+.candidate-check.selected { opacity: 1; }
+.zone-row-enter-active {
+  transition: opacity .18s ease, transform .22s var(--motion-out);
+}
+.zone-row-enter-from { opacity: 0; transform: translateY(10px) scale(.98); }
+
+
+/* Drag motion belongs to the detached card, not the shelf layout. */
+.grid-drag-enabled { cursor: grab; touch-action: none; user-select: none; }
+.grid-drag-source { opacity: .18; }
+.grid-drag-covered { opacity: 0 !important; }
+.grid-drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 24px var(--accent-dim);
+}
+.grid-drop-invalid {
+  outline: 2px solid var(--danger);
+  outline-offset: -2px;
+}
+.grid-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 80;
+  pointer-events: none;
+  will-change: transform;
+}
+.grid-drag-ghost > .bin-card {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  transform: none !important;
+  box-shadow: 0 18px 50px #0008, 0 0 0 1px var(--accent);
+}
+.grid-drag-active .cell-enter-active { transition: none; }
+.grid-drag-active .cell-enter-from { opacity: 1; transform: none; }
+.grid-toolbar-slot {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.grid-toolbar {
+  max-width: 100%;
+  padding: 6px 8px;
+  border-radius: 16px;
+  pointer-events: auto;
+  transition: border-color .18s ease;
+}
+.grid-toolbar-menu {
+  display: flex;
+  width: max-content;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+}
+.grid-toolbar-page {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+.grid-toolbar-context {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  font-size: 13px;
+}
+.grid-toolbar-context > button { pointer-events: auto; }
+.grid-drag-active, .grid-drag-active * { cursor: grabbing !important; }
+
+.motion-field-placeholder { color: var(--text-faint); }
+
+.grid-drag-enabled:not(.card-picked):hover,
+.grid-drag-enabled:not(.card-picked):active { transform: none; }
+
+
+/* Mount owns entry; late child measurements cannot erase transition classes. */
+@keyframes dialog-open {
+  from { opacity: 0; transform: translateY(24px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.motion-dialog { animation: dialog-open .28s var(--motion-out) backwards; }
+.motion-dialog.dialog-panel-leave { animation: none; }
+
+@keyframes lookup-meta-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.lookup-meta-entry { animation: lookup-meta-in .18s ease-out backwards; }
